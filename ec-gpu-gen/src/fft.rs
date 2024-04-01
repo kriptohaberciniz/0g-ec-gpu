@@ -1,12 +1,13 @@
 use std::cmp;
 use std::sync::{Arc, RwLock};
 
+use ark_ff::Field;
 use ec_gpu::GpuName;
-use ff::Field;
 use log::{error, info};
 use rust_gpu_tools::{program_closures, LocalBuffer, Program};
 
 use crate::error::{EcError, EcResult};
+use crate::pow_vartime;
 use crate::threadpool::THREAD_POOL;
 
 const LOG2_MAX_ELEMENTS: usize = 32; // At most 2^32 elements is supported.
@@ -58,7 +59,7 @@ impl<'a, F: Field + GpuName> SingleFftKernel<'a, F> {
             // Precalculate:
             // [omega^(0/(2^(deg-1))), omega^(1/(2^(deg-1))), ..., omega^((2^(deg-1)-1)/(2^(deg-1)))]
             let mut pq = vec![F::ZERO; 1 << max_deg >> 1];
-            let twiddle = omega.pow_vartime([(n >> max_deg) as u64]);
+            let twiddle = pow_vartime(omega, [(n >> max_deg) as u64]);
             pq[0] = F::ONE;
             if max_deg > 1 {
                 pq[1] = twiddle;
@@ -73,7 +74,7 @@ impl<'a, F: Field + GpuName> SingleFftKernel<'a, F> {
             let mut omegas = vec![F::ZERO; 32];
             omegas[0] = *omega;
             for i in 1..LOG2_MAX_ELEMENTS {
-                omegas[i] = omegas[i - 1].pow_vartime([2u64]);
+                omegas[i] = pow_vartime(&omegas[i - 1], [2u64]);
             }
             let omegas_buffer = program.create_buffer_from_slice(&omegas)?;
 

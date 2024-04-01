@@ -34,7 +34,7 @@ KERNEL void POINT_multiexp(
   // Num of elements in each group. Round the number up (ceil).
   const uint len = (n + num_groups - 1) / num_groups;
 
-  // This thread runs the multiexp algorithm on elements from `nstart` to `nened`
+  // This thread runs the multiexp algorithm on elements from `nstart` to `nend`
   // on the window [`bits`, `bits` + `w`)
   const uint nstart = len * (gid / num_windows);
   const uint nend = min(nstart + len, n);

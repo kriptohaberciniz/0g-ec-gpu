@@ -1,6 +1,6 @@
-use ff::PrimeField;
+use ark_ff::PrimeField;
 
-use crate::threadpool::Worker;
+use crate::{pow_vartime, threadpool::Worker};
 
 /// Calculate the Fast Fourier Transform on the CPU (single-threaded).
 ///
@@ -29,7 +29,7 @@ pub fn serial_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32) {
 
     let mut m = 1;
     for _ in 0..log_n {
-        let w_m = omega.pow_vartime(&[u64::from(n / (2 * m))]);
+        let w_m = pow_vartime(omega, &[u64::from(n / (2 * m))]);
 
         let mut k = 0;
         while k < n {
@@ -68,7 +68,7 @@ pub fn parallel_fft<F: PrimeField>(
     let num_threads = 1 << log_threads;
     let log_new_n = log_n - log_threads;
     let mut tmp = vec![vec![F::ZERO; 1 << log_new_n]; num_threads];
-    let new_omega = omega.pow_vartime(&[num_threads as u64]);
+    let new_omega = pow_vartime(omega, &[num_threads as u64]);
 
     worker.scope(0, |scope, _| {
         let a = &*a;
@@ -76,8 +76,8 @@ pub fn parallel_fft<F: PrimeField>(
         for (j, tmp) in tmp.iter_mut().enumerate() {
             scope.execute(move || {
                 // Shuffle into a sub-FFT
-                let omega_j = omega.pow_vartime(&[j as u64]);
-                let omega_step = omega.pow_vartime(&[(j as u64) << log_new_n]);
+                let omega_j = pow_vartime(omega, &[j as u64]);
+                let omega_step = pow_vartime(omega, &[(j as u64) << log_new_n]);
 
                 let mut elt = F::ONE;
                 for (i, tmp) in tmp.iter_mut().enumerate() {
@@ -116,19 +116,13 @@ pub fn parallel_fft<F: PrimeField>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use ark_ff::FftField;
 
-    use std::cmp::min;
-
-    use blstrs::Scalar as Fr;
-    use ff::PrimeField;
-    use rand_core::RngCore;
-
-    fn omega<F: PrimeField>(num_coeffs: usize) -> F {
+    fn omega<F: FftField>(num_coeffs: usize) -> F {
         // Compute omega, the 2^exp primitive root of unity
         let exp = (num_coeffs as f32).log2().floor() as u32;
-        let mut omega = F::ROOT_OF_UNITY;
-        for _ in exp..F::S {
+        let mut omega = F::TWO_ADIC_ROOT_OF_UNITY;
+        for _ in exp..F::TWO_ADICITY {
             omega = omega.square();
         }
         omega
@@ -136,6 +130,12 @@ mod tests {
 
     #[test]
     fn parallel_fft_consistency() {
+        use super::*;
+
+        use ark_bls12_381::Fr;
+        use rand_core::RngCore;
+        use std::cmp::min;
+
         fn test_consistency<F: PrimeField, R: RngCore>(rng: &mut R) {
             let worker = Worker::new();
 
@@ -143,7 +143,7 @@ mod tests {
                 for log_d in 0..10 {
                     let d = 1 << log_d;
 
-                    let mut v1_coeffs = (0..d).map(|_| F::random(&mut *rng)).collect::<Vec<_>>();
+                    let mut v1_coeffs = (0..d).map(|_| F::rand(&mut *rng)).collect::<Vec<_>>();
                     let mut v2_coeffs = v1_coeffs.clone();
                     let v1_omega = omega::<F>(v1_coeffs.len());
                     let v2_omega = v1_omega;

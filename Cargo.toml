@@ -2,6 +2,6 @@
 members = [
   "ec-gpu",
   "ec-gpu-gen",
-  "gpu-tests",
+  "gpu-ark-tests"
 ]
 resolver = "2"

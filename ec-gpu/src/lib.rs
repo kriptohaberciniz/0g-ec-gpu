@@ -1,3 +1,5 @@
+mod impls;
+
 /// The name that is used in the GPU source code to identify the item that is used.
 pub trait GpuName {
     /// A unique name for the item.
@@ -41,6 +43,29 @@ pub trait GpuField: GpuName {
     }
 }
 
+pub trait GpuCurveAffine:
+    GpuName + AffineRepr<ScalarField = Self::Scalar, Group = Self::Curve> + GpuRepr
+{
+    type Scalar: GpuField + PrimeFieldRepr;
+    type Curve: CurveGroup<Affine = Self>;
+
+    fn is_identity(&self) -> bool;
+
+    fn is_on_curve(&self) -> bool;
+}
+
+pub trait PrimeFieldRepr: ark_ff::PrimeField {
+    type Repr: ark_ff::BigInteger;
+    fn to_repr(&self) -> Self::Repr;
+    fn from_repr(repr: Self::Repr) -> Option<Self>;
+}
+
+pub trait GpuRepr {
+    type Repr;
+
+    fn to_gpu_repr(&self) -> Self::Repr;
+}
+
 /// Macro to get a unique name of an item.
 ///
 /// The name is a string that consists of the module path and the type name. All non-alphanumeric
@@ -58,4 +83,24 @@ macro_rules! name {
         };
         name.replace(|c: char| !c.is_ascii_alphanumeric(), "_")
     }};
+}
+
+use std::any::Any;
+
+use ark_ec::{AffineRepr, CurveGroup};
+use ark_ff::{BigInt, Fp2Config, MontBackend, MontConfig, PrimeField, Zero};
+
+#[test]
+fn mr_demo() -> () {
+    use ark_bls12_381::{Fq, Fq2, Fr};
+    println!("scalar one: {:?}", <Fr as GpuField>::one());
+    println!("scalar r2: {:?}", Fr::r2());
+    println!("scalar modulus: {:?}", Fr::modulus());
+    println!("G1 one: {:?}", <Fq as GpuField>::one());
+    println!("G1 r2: {:?}", Fq::r2());
+    println!("G1 modulus: {:?}", Fq::modulus());
+    println!("G2 one: {:?}", <Fq2 as GpuField>::one());
+    println!("G2 r2: {:?}", Fq2::r2());
+    println!("G2 modulus: {:?}", Fq2::modulus());
+    println!("G2 sub field name: {:?}", Fq2::sub_field_name());
 }

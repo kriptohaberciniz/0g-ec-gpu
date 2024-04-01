@@ -8,8 +8,7 @@ use std::path::PathBuf;
 #[cfg(any(feature = "opencl", feature = "cuda"))]
 use std::{env, fs};
 
-use ec_gpu::{GpuField, GpuName};
-use group::prime::PrimeCurveAffine;
+use ec_gpu::{GpuCurveAffine, GpuField, GpuName};
 
 static COMMON_SRC: &str = include_str!("cl/common.cl");
 static FIELD_SRC: &str = include_str!("cl/field.cl");
@@ -157,7 +156,7 @@ impl<F: GpuName> NameAndSource for Fft<F> {
     }
 }
 
-/// Struct that generates multiexp GPU smource code.
+/// Struct that generates multiexp GPU source code.
 struct Multiexp<P: GpuName, F: GpuName, Exp: GpuName> {
     curve_point: PhantomData<P>,
     field: PhantomData<F>,
@@ -191,20 +190,6 @@ impl<P: GpuName, F: GpuName, Exp: GpuName> NameAndSource for Multiexp<P, F, Exp>
 }
 
 /// Builder to create the source code of a GPU kernel.
-///
-/// # Example
-///
-/// ```
-/// use blstrs::{Fp, Fp2, G1Affine, G2Affine, Scalar};
-/// use ec_gpu_gen::SourceBuilder;
-///
-/// # #[cfg(any(feature = "cuda", feature = "opencl"))]
-/// let source = SourceBuilder::new()
-///     .add_fft::<Scalar>()
-///     .add_multiexp::<G1Affine, Fp>()
-///     .add_multiexp::<G2Affine, Fp2>()
-///     .build_32_bit_limbs();
-///```
 // In the `HashSet`s the concrete types cannot be used, as each item of the set should be able to
 // have its own (different) generic type.
 // We distinguish between extension fields and other fields as sub-fields need to be defined first
@@ -270,8 +255,7 @@ impl SourceBuilder {
     /// directly.
     pub fn add_multiexp<C, F>(self) -> Self
     where
-        C: PrimeCurveAffine + GpuName,
-        C::Scalar: GpuField,
+        C: GpuCurveAffine + 'static,
         F: GpuField + 'static,
     {
         let mut config = self.add_field::<F>().add_field::<C::Scalar>();
@@ -636,7 +620,7 @@ fn generate_cuda(source_builder: &SourceBuilder) -> PathBuf {
     let source_path: PathBuf = [&out_dir, &format!("{}.cu", &kernel_digest)]
         .iter()
         .collect();
-    let fatbin_path: PathBuf = [&out_dir, &format!("{}.fatbin", &kernel_digest)]
+    let fatbin_path: PathBuf = [&out_dir, &format!("../../../../{}.fatbin", &kernel_digest)]
         .iter()
         .collect();
 
@@ -700,9 +684,12 @@ fn generate_opencl(source_builder: &SourceBuilder) -> PathBuf {
 }
 
 #[cfg(all(test, any(feature = "opencl", feature = "cuda")))]
-mod tests {
+mod test_tool {
     use super::*;
+    use chosen_ark_suite::Fr as Scalar;
 
+    use ark_ff::Field;
+    use lazy_static::lazy_static;
     use std::sync::Mutex;
 
     #[cfg(feature = "cuda")]
@@ -710,11 +697,6 @@ mod tests {
     #[cfg(feature = "opencl")]
     use rust_gpu_tools::opencl;
     use rust_gpu_tools::{program_closures, Device, GPUError, Program};
-
-    use blstrs::Scalar;
-    use ff::{Field as _, PrimeField};
-    use lazy_static::lazy_static;
-    use rand::{thread_rng, Rng};
 
     static TEST_SRC: &str = include_str!("./cl/test.cl");
 
@@ -789,7 +771,7 @@ mod tests {
         };
     }
 
-    fn call_kernel(name: &str, scalars: &[GpuScalar], uints: &[u32]) -> Scalar {
+    pub fn call_kernel(name: &str, scalars: &[GpuScalar], uints: &[u32]) -> Scalar {
         let closures = program_closures!(|program, _args| -> Result<Scalar, NoError> {
             let mut cpu_buffer = vec![GpuScalar::default()];
             let buffer = program.create_buffer_from_slice(&cpu_buffer).unwrap();
@@ -840,102 +822,7 @@ mod tests {
             cuda_result
         }
     }
-
-    #[test]
-    fn test_add() {
-        let mut rng = thread_rng();
-        for _ in 0..10 {
-            let a = Scalar::random(&mut rng);
-            let b = Scalar::random(&mut rng);
-            let c = a + b;
-
-            assert_eq!(
-                call_kernel("test_add", &[GpuScalar(a), GpuScalar(b)], &[]),
-                c
-            );
-        }
-    }
-
-    #[test]
-    fn test_sub() {
-        let mut rng = thread_rng();
-        for _ in 0..10 {
-            let a = Scalar::random(&mut rng);
-            let b = Scalar::random(&mut rng);
-            let c = a - b;
-            assert_eq!(
-                call_kernel("test_sub", &[GpuScalar(a), GpuScalar(b)], &[]),
-                c
-            );
-        }
-    }
-
-    #[test]
-    fn test_mul() {
-        let mut rng = thread_rng();
-        for _ in 0..10 {
-            let a = Scalar::random(&mut rng);
-            let b = Scalar::random(&mut rng);
-            let c = a * b;
-
-            assert_eq!(
-                call_kernel("test_mul", &[GpuScalar(a), GpuScalar(b)], &[]),
-                c
-            );
-        }
-    }
-
-    #[test]
-    fn test_pow() {
-        let mut rng = thread_rng();
-        for _ in 0..10 {
-            let a = Scalar::random(&mut rng);
-            let b = rng.gen::<u32>();
-            let c = a.pow_vartime([b as u64]);
-            assert_eq!(call_kernel("test_pow", &[GpuScalar(a)], &[b]), c);
-        }
-    }
-
-    #[test]
-    fn test_sqr() {
-        let mut rng = thread_rng();
-        for _ in 0..10 {
-            let a = Scalar::random(&mut rng);
-            let b = a.square();
-
-            assert_eq!(call_kernel("test_sqr", &[GpuScalar(a)], &[]), b);
-        }
-    }
-
-    #[test]
-    fn test_double() {
-        let mut rng = thread_rng();
-        for _ in 0..10 {
-            let a = Scalar::random(&mut rng);
-            let b = a.double();
-
-            assert_eq!(call_kernel("test_double", &[GpuScalar(a)], &[]), b);
-        }
-    }
-
-    #[test]
-    fn test_unmont() {
-        let mut rng = thread_rng();
-        for _ in 0..10 {
-            let a = Scalar::random(&mut rng);
-            let b: Scalar = unsafe { std::mem::transmute(a.to_repr()) };
-            assert_eq!(call_kernel("test_unmont", &[GpuScalar(a)], &[]), b);
-        }
-    }
-
-    #[test]
-    fn test_mont() {
-        let mut rng = thread_rng();
-        for _ in 0..10 {
-            let a_repr = Scalar::random(&mut rng).to_repr();
-            let a: Scalar = unsafe { std::mem::transmute(a_repr) };
-            let b = Scalar::from_repr(a_repr).unwrap();
-            assert_eq!(call_kernel("test_mont", &[GpuScalar(a)], &[]), b);
-        }
-    }
 }
+
+#[cfg(all(test, any(feature = "opencl", feature = "cuda")))]
+pub use test_tool::{call_kernel, GpuScalar};

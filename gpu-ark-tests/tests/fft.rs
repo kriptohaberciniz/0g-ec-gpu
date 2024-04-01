@@ -2,20 +2,21 @@
 
 use std::time::Instant;
 
-use blstrs::Scalar as Fr;
+use ark_bn254::Fr;
+use ark_ff::FftField;
+use ark_std::UniformRand;
 use ec_gpu_gen::{
     fft::FftKernel,
     fft_cpu::{parallel_fft, serial_fft},
     rust_gpu_tools::Device,
     threadpool::Worker,
 };
-use ff::{Field, PrimeField};
 
-fn omega<F: PrimeField>(num_coeffs: usize) -> F {
+fn omega<F: FftField>(num_coeffs: usize) -> F {
     // Compute omega, the 2^exp primitive root of unity
     let exp = (num_coeffs as f32).log2().floor() as u32;
-    let mut omega = F::ROOT_OF_UNITY;
-    for _ in exp..F::S {
+    let mut omega = F::TWO_ADIC_ROOT_OF_UNITY;
+    for _ in exp..F::TWO_ADICITY {
         omega = omega.square();
     }
     omega
@@ -39,7 +40,7 @@ pub fn gpu_fft_consistency() {
     for log_d in 1..=20 {
         let d = 1 << log_d;
 
-        let mut v1_coeffs = (0..d).map(|_| Fr::random(&mut rng)).collect::<Vec<_>>();
+        let mut v1_coeffs = (0..d).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
         let v1_omega = omega::<Fr>(v1_coeffs.len());
         let mut v2_coeffs = v1_coeffs.clone();
         let v2_omega = v1_omega;
@@ -86,9 +87,9 @@ pub fn gpu_fft_many_consistency() {
     for log_d in 1..=20 {
         let d = 1 << log_d;
 
-        let mut v11_coeffs = (0..d).map(|_| Fr::random(&mut rng)).collect::<Vec<_>>();
-        let mut v12_coeffs = (0..d).map(|_| Fr::random(&mut rng)).collect::<Vec<_>>();
-        let mut v13_coeffs = (0..d).map(|_| Fr::random(&mut rng)).collect::<Vec<_>>();
+        let mut v11_coeffs = (0..d).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
+        let mut v12_coeffs = (0..d).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
+        let mut v13_coeffs = (0..d).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
         let v11_omega = omega::<Fr>(v11_coeffs.len());
         let v12_omega = omega::<Fr>(v12_coeffs.len());
         let v13_omega = omega::<Fr>(v13_coeffs.len());

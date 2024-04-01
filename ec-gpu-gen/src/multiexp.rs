@@ -1,9 +1,10 @@
 use std::ops::AddAssign;
 use std::sync::{Arc, RwLock};
 
-use ec_gpu::GpuName;
-use ff::PrimeField;
-use group::{prime::PrimeCurveAffine, Group};
+use ark_ec::Group;
+use ark_ff::Zero;
+use ec_gpu::PrimeFieldRepr as PrimeField;
+use ec_gpu::{GpuCurveAffine, GpuName, GpuRepr};
 use log::{error, info};
 use rust_gpu_tools::{program_closures, Device, Program};
 use yastl::Scope;
@@ -45,7 +46,7 @@ const fn work_units(compute_units: u32, compute_capabilities: Option<(u32, u32)>
 /// Multiexp kernel for a single GPU.
 pub struct SingleMultiexpKernel<'a, G>
 where
-    G: PrimeCurveAffine,
+    G: GpuCurveAffine,
 {
     program: Program,
     /// The number of exponentiations the GPU can handle in a single execution of the kernel.
@@ -64,7 +65,7 @@ where
 /// Calculates the maximum number of terms that can be put onto the GPU memory.
 fn calc_chunk_size<G>(mem: u64, work_units: usize) -> usize
 where
-    G: PrimeCurveAffine,
+    G: GpuCurveAffine,
     G::Scalar: PrimeField,
 {
     let aff_size = std::mem::size_of::<G>();
@@ -94,7 +95,7 @@ fn exp_size<F: PrimeField>() -> usize {
 
 impl<'a, G> SingleMultiexpKernel<'a, G>
 where
-    G: PrimeCurveAffine + GpuName,
+    G: GpuCurveAffine + GpuName,
 {
     /// Create a new Multiexp kernel instance for a device.
     ///
@@ -143,12 +144,14 @@ where
         let num_groups = self.work_units / num_windows;
         let bucket_len = 1 << window_size;
 
+        let bases_gpu: Vec<_> = bases.iter().map(GpuRepr::to_gpu_repr).collect();
+
         // Each group will have `num_windows` threads and as there are `num_groups` groups, there will
         // be `num_groups` * `num_windows` threads in total.
         // Each thread will use `num_groups` * `num_windows` * `bucket_len` buckets.
 
         let closures = program_closures!(|program, _arg| -> EcResult<Vec<G::Curve>> {
-            let base_buffer = program.create_buffer_from_slice(bases)?;
+            let base_buffer = program.create_buffer_from_slice(&bases_gpu)?;
             let exp_buffer = program.create_buffer_from_slice(exponents)?;
 
             // It is safe as the GPU will initialize that buffer
@@ -175,17 +178,18 @@ where
                 .arg(&(window_size as u32))
                 .run()?;
 
-            let mut results = vec![G::Curve::identity(); self.work_units];
+            let mut results = vec![G::Curve::zero(); self.work_units];
+
             program.read_into_buffer(&result_buffer, &mut results)?;
 
             Ok(results)
         });
 
-        let results = self.program.run(closures, ())?;
+        let results: Vec<G::Curve> = self.program.run(closures, ())?;
 
         // Using the algorithm below, we can calculate the final result by accumulating the results
         // of those `NUM_GROUPS` * `NUM_WINDOWS` threads.
-        let mut acc = G::Curve::identity();
+        let mut acc = G::Curve::zero();
         let mut bits = 0;
         let exp_bits = exp_size::<G::Scalar>() * 8;
         for i in 0..num_windows {
@@ -219,14 +223,14 @@ where
 /// A struct that containts several multiexp kernels for different devices.
 pub struct MultiexpKernel<'a, G>
 where
-    G: PrimeCurveAffine,
+    G: GpuCurveAffine,
 {
     kernels: Vec<SingleMultiexpKernel<'a, G>>,
 }
 
 impl<'a, G> MultiexpKernel<'a, G>
 where
-    G: PrimeCurveAffine + GpuName,
+    G: GpuCurveAffine + GpuName,
 {
     /// Create new kernels, one for each given device.
     pub fn create(programs: Vec<Program>, devices: &[&Device]) -> EcResult<Self> {
@@ -309,7 +313,7 @@ where
         {
             let error = error.clone();
             scope.execute(move || {
-                let mut acc = G::Curve::identity();
+                let mut acc = G::Curve::zero();
                 for (bases, exps) in bases.chunks(kern.n).zip(exps.chunks(kern.n)) {
                     if error.read().unwrap().is_err() {
                         break;
@@ -348,7 +352,7 @@ where
         let error = Arc::new(RwLock::new(Ok(())));
 
         pool.scoped(|s| {
-            results = vec![G::Curve::identity(); self.kernels.len()];
+            results = vec![G::Curve::zero(); self.kernels.len()];
             self.parallel_multiexp(s, bases, exps, &mut results, error.clone());
         });
 
@@ -357,7 +361,7 @@ where
             .into_inner()
             .unwrap()?;
 
-        let mut acc = G::Curve::identity();
+        let mut acc = G::Curve::zero();
         for r in results {
             acc.add_assign(&r);
         }
