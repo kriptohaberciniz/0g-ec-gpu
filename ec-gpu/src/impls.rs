@@ -2,7 +2,6 @@ use super::*;
 
 use ark_ec::{models::short_weierstrass::Affine, short_weierstrass::SWCurveConfig};
 
-
 impl<T: MontConfig<N>, const N: usize> PrimeFieldRepr for ark_ff::Fp<MontBackend<T, N>, N>
 where
     Self: PrimeField,

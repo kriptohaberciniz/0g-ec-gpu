@@ -1,3 +1,7 @@
+KERNEL void test_ec(POINT_jacobian a, EXPONENT b, GLOBAL POINT_jacobian *result) {
+  *result = POINT_mul(a, b);
+}
+
 KERNEL void test_add(FIELD a, FIELD b, GLOBAL FIELD *result) {
   *result = FIELD_add(a, b);
 }

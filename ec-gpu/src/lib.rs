@@ -47,7 +47,7 @@ pub trait GpuCurveAffine:
     GpuName + AffineRepr<ScalarField = Self::Scalar, Group = Self::Curve> + GpuRepr
 {
     type Scalar: GpuField + PrimeFieldRepr;
-    type Curve: CurveGroup<Affine = Self>;
+    type Curve: CurveGroup<Affine = Self> + MulAssign<Self::ScalarField>;
 
     fn is_identity(&self) -> bool;
 
@@ -85,7 +85,7 @@ macro_rules! name {
     }};
 }
 
-use std::any::Any;
+use std::{any::Any, ops::MulAssign};
 
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::{BigInt, Fp2Config, MontBackend, MontConfig, PrimeField, Zero};

@@ -118,3 +118,26 @@ DEVICE POINT_jacobian POINT_add(POINT_jacobian a, POINT_jacobian b) {
     return a;
   }
 }
+
+DEVICE POINT_jacobian POINT_neg(POINT_jacobian a) {
+  a.y = FIELD_sub(FIELD_ZERO, a.y);
+  return a;
+}
+
+DEVICE POINT_jacobian POINT_sub(POINT_jacobian a, POINT_jacobian b) {
+  return POINT_add(a, POINT_neg(b));
+}
+
+DEVICE POINT_jacobian POINT_mul_EXPONENT(POINT_jacobian base, EXPONENT exp) {
+  POINT_jacobian res = POINT_ZERO;
+  for(uint i = 0; i < EXPONENT_BITS; i++) {
+    res = POINT_double(res);
+    bool exp_bit_i = EXPONENT_get_bit(exp, i);
+    if(exp_bit_i) res = POINT_add(res, base);
+  }
+  return res;
+}
+
+DEVICE POINT_jacobian POINT_mul(POINT_jacobian base, EXPONENT exp) {
+  return POINT_mul_EXPONENT(base, EXPONENT_unmont(exp));
+}

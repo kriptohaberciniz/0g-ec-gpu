@@ -1,4 +1,6 @@
-use ark_ff::PrimeField;
+use ark_ff::{Field, PrimeField, Zero};
+use ec_gpu::GpuCurveAffine;
+use std::ops::MulAssign;
 
 use crate::{pow_vartime, threadpool::Worker};
 
@@ -7,7 +9,10 @@ use crate::{pow_vartime, threadpool::Worker};
 /// The input `a` is mutated and contains the result when this function returns. The length of the
 /// input vector must be `2^log_n`.
 #[allow(clippy::many_single_char_names)]
-pub fn serial_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32) {
+pub fn serial_fftg<G: GpuCurveAffine>(a: &mut [G::Curve], omega: &G::Scalar, log_n: u32)
+where
+    G::Scalar: PrimeField,
+{
     fn bitreverse(mut n: u32, l: u32) -> u32 {
         let mut r = 0;
         for _ in 0..l {
@@ -33,10 +38,10 @@ pub fn serial_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32) {
 
         let mut k = 0;
         while k < n {
-            let mut w = F::ONE;
+            let mut w = G::Scalar::ONE;
             for j in 0..m {
                 let mut t = a[(k + j + m) as usize];
-                t *= w;
+                t.mul_assign(w);
                 let mut tmp = a[(k + j) as usize];
                 tmp -= t;
                 a[(k + j + m) as usize] = tmp;
@@ -56,18 +61,20 @@ pub fn serial_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32) {
 /// The result is is written to the input `a`.
 /// The number of threads used will be `2^log_threads`.
 /// There must be more items to process than threads.
-pub fn parallel_fft<F: PrimeField>(
-    a: &mut [F],
+pub fn parallel_fftg<G: GpuCurveAffine>(
+    a: &mut [G::Curve],
     worker: &Worker,
-    omega: &F,
+    omega: &G::Scalar,
     log_n: u32,
     log_threads: u32,
-) {
+) where
+    G::Scalar: PrimeField,
+{
     assert!(log_n >= log_threads);
 
     let num_threads = 1 << log_threads;
     let log_new_n = log_n - log_threads;
-    let mut tmp = vec![vec![F::ZERO; 1 << log_new_n]; num_threads];
+    let mut tmp = vec![vec![G::Curve::zero(); 1 << log_new_n]; num_threads];
     let new_omega = pow_vartime(omega, &[num_threads as u64]);
 
     worker.scope(0, |scope, _| {
@@ -79,7 +86,7 @@ pub fn parallel_fft<F: PrimeField>(
                 let omega_j = pow_vartime(omega, &[j as u64]);
                 let omega_step = pow_vartime(omega, &[(j as u64) << log_new_n]);
 
-                let mut elt = F::ONE;
+                let mut elt = G::Scalar::ONE;
                 for (i, tmp) in tmp.iter_mut().enumerate() {
                     for s in 0..num_threads {
                         let idx = (i + (s << log_new_n)) % (1 << log_n);
@@ -92,7 +99,7 @@ pub fn parallel_fft<F: PrimeField>(
                 }
 
                 // Perform sub-FFT
-                serial_fft::<F>(tmp, &new_omega, log_new_n);
+                serial_fftg::<G>(tmp, &new_omega, log_new_n);
             });
         }
     });
@@ -129,28 +136,33 @@ mod tests {
     }
 
     #[test]
-    fn parallel_fft_consistency() {
+    fn parallel_fftg_consistency() {
         use super::*;
 
-        use chosen_ark_suite::Fr;
+        use chosen_ark_suite::G1Affine;
         use rand_core::RngCore;
         use std::cmp::min;
 
-        fn test_consistency<F: PrimeField, R: RngCore>(rng: &mut R) {
+        fn test_consistency<G: GpuCurveAffine, R: RngCore>(rng: &mut R)
+        where
+            G::Scalar: PrimeField,
+        {
             let worker = Worker::new();
 
             for _ in 0..5 {
                 for log_d in 0..10 {
                     let d = 1 << log_d;
 
-                    let mut v1_coeffs = (0..d).map(|_| F::rand(&mut *rng)).collect::<Vec<_>>();
+                    let mut v1_coeffs = (0..d)
+                        .map(|_| G::rand(&mut *rng).into_group())
+                        .collect::<Vec<_>>();
                     let mut v2_coeffs = v1_coeffs.clone();
-                    let v1_omega = omega::<F>(v1_coeffs.len());
+                    let v1_omega = omega::<G::Scalar>(v1_coeffs.len());
                     let v2_omega = v1_omega;
 
                     for log_threads in log_d..min(log_d + 1, 3) {
-                        parallel_fft::<F>(&mut v1_coeffs, &worker, &v1_omega, log_d, log_threads);
-                        serial_fft::<F>(&mut v2_coeffs, &v2_omega, log_d);
+                        parallel_fftg::<G>(&mut v1_coeffs, &worker, &v1_omega, log_d, log_threads);
+                        serial_fftg::<G>(&mut v2_coeffs, &v2_omega, log_d);
 
                         assert!(v1_coeffs == v2_coeffs);
                     }
@@ -160,6 +172,6 @@ mod tests {
 
         let rng = &mut rand::thread_rng();
 
-        test_consistency::<Fr, _>(rng);
+        test_consistency::<G1Affine, _>(rng);
     }
 }

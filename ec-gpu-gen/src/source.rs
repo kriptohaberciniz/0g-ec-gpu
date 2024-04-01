@@ -15,6 +15,7 @@ static FIELD_SRC: &str = include_str!("cl/field.cl");
 static FIELD2_SRC: &str = include_str!("cl/field2.cl");
 static EC_SRC: &str = include_str!("cl/ec.cl");
 static FFT_SRC: &str = include_str!("cl/fft.cl");
+static FFTG_SRC: &str = include_str!("cl/fftg.cl");
 static MULTIEXP_SRC: &str = include_str!("cl/multiexp.cl");
 
 #[derive(Clone, Copy)]
@@ -163,6 +164,40 @@ struct Multiexp<P: GpuName, F: GpuName, Exp: GpuName> {
     exponent: PhantomData<Exp>,
 }
 
+/// Struct that generates FFT for G1 GPU source code.
+struct FftG<P: GpuName, F: GpuName, Exp: GpuName> {
+    curve_point: PhantomData<P>,
+    field: PhantomData<F>,
+    exponent: PhantomData<Exp>,
+}
+
+impl<P: GpuName, F: GpuName, Exp: GpuName> FftG<P, F, Exp> {
+    pub fn new() -> Self {
+        Self {
+            curve_point: PhantomData::<P>,
+            field: PhantomData::<F>,
+            exponent: PhantomData::<Exp>,
+        }
+    }
+}
+
+impl<P: GpuName, F: GpuName, Exp: GpuName> NameAndSource for FftG<P, F, Exp> {
+    fn name(&self) -> String {
+        P::name()
+    }
+
+    fn source(&self, _limb: Limb32Or64) -> String {
+        let ec = String::from(EC_SRC)
+            .replace("FIELD", &F::name())
+            .replace("POINT", &P::name())
+            .replace("EXPONENT", &Exp::name());
+        let fftg = String::from(FFTG_SRC)
+            .replace("POINT", &P::name())
+            .replace("EXPONENT", &Exp::name());
+        [ec, fftg].concat()
+    }
+}
+
 impl<P: GpuName, F: GpuName, Exp: GpuName> Multiexp<P, F, Exp> {
     pub fn new() -> Self {
         Self {
@@ -181,7 +216,9 @@ impl<P: GpuName, F: GpuName, Exp: GpuName> NameAndSource for Multiexp<P, F, Exp>
     fn source(&self, _limb: Limb32Or64) -> String {
         let ec = String::from(EC_SRC)
             .replace("FIELD", &F::name())
-            .replace("POINT", &P::name());
+            .replace("POINT", &P::name())
+            .replace("EXPONENT", &Exp::name());
+
         let multiexp = String::from(MULTIEXP_SRC)
             .replace("POINT", &P::name())
             .replace("EXPONENT", &Exp::name());
@@ -201,6 +238,8 @@ pub struct SourceBuilder {
     extension_fields: HashSet<Box<dyn NameAndSource>>,
     /// The [`Fft`]s that are used in this kernel.
     ffts: HashSet<Box<dyn NameAndSource>>,
+    /// The [`Fftg`]s that are used in this kernel.
+    fftgs: HashSet<Box<dyn NameAndSource>>,
     /// The [`Multiexp`]s that are used in this kernel.
     multiexps: HashSet<Box<dyn NameAndSource>>,
     /// Additional source that is appended at the end of the generated source.
@@ -214,6 +253,7 @@ impl SourceBuilder {
             fields: HashSet::new(),
             extension_fields: HashSet::new(),
             ffts: HashSet::new(),
+            fftgs: HashSet::new(),
             multiexps: HashSet::new(),
             extra_sources: Vec::new(),
         }
@@ -246,6 +286,21 @@ impl SourceBuilder {
         let mut config = self.add_field::<F>();
         let fft = Fft::<F>(PhantomData);
         config.ffts.insert(Box::new(fft));
+        config
+    }
+
+    /// Add an FFTg kernel function to the configuration.
+    ///
+    /// The field must be given explicitly as currently it cannot derived from the curve point
+    /// directly.
+    pub fn add_fftg<C, F>(self) -> Self
+    where
+        C: GpuCurveAffine + 'static,
+        F: GpuField + 'static,
+    {
+        let mut config = self.add_field::<F>().add_field::<C::Scalar>();
+        let fftg = FftG::<C, F, C::Scalar>::new();
+        config.fftgs.insert(Box::new(fftg));
         config
     }
 
@@ -301,6 +356,11 @@ impl SourceBuilder {
             .map(|field| field.source(limb_size))
             .collect();
         let ffts = self.ffts.iter().map(|fft| fft.source(limb_size)).collect();
+        let fftgs = self
+            .fftgs
+            .iter()
+            .map(|fftg| fftg.source(limb_size))
+            .collect();
         let multiexps = self
             .multiexps
             .iter()
@@ -312,6 +372,7 @@ impl SourceBuilder {
             fields,
             extension_fields,
             ffts,
+            fftgs,
             multiexps,
             extra_sources,
         ]
@@ -686,9 +747,13 @@ fn generate_opencl(source_builder: &SourceBuilder) -> PathBuf {
 #[cfg(all(test, any(feature = "opencl", feature = "cuda")))]
 mod test_tool {
     use super::*;
+    use chosen_ark_suite::Fq as Base;
     use chosen_ark_suite::Fr as Scalar;
+    use chosen_ark_suite::G1Affine;
+    use chosen_ark_suite::G1Projective as G1;
 
     use ark_ff::Field;
+    use ec_gpu::PrimeFieldRepr;
     use lazy_static::lazy_static;
     use std::sync::Mutex;
 
@@ -733,15 +798,19 @@ mod test_tool {
     }
 
     fn test_source() -> SourceBuilder {
-        let test_source = String::from(TEST_SRC).replace("FIELD", &Scalar::name());
+        let test_source = String::from(TEST_SRC)
+            .replace("FIELD", &Base::name())
+            .replace("POINT", &G1Affine::name())
+            .replace("EXPONENT", &Scalar::name());
         SourceBuilder::new()
             .add_field::<Scalar>()
+            .add_multiexp::<G1Affine, Base>()
             .append_source(test_source)
     }
 
     #[cfg(feature = "cuda")]
     lazy_static! {
-        static ref CUDA_PROGRAM: Mutex<Program> = {
+        pub static ref CUDA_PROGRAM: Mutex<Program> = {
             use std::ffi::CString;
 
             let source = test_source();
@@ -760,7 +829,7 @@ mod test_tool {
 
     #[cfg(feature = "opencl")]
     lazy_static! {
-        static ref OPENCL_PROGRAM: Mutex<(Program, Program)> = {
+        pub static ref OPENCL_PROGRAM: Mutex<(Program, Program)> = {
             let device = *Device::all().first().expect("Cannot get a default device");
             let opencl_device = device.opencl_device().unwrap();
             let source_32 = test_source().build_32_bit_limbs();
@@ -825,4 +894,4 @@ mod test_tool {
 }
 
 #[cfg(all(test, any(feature = "opencl", feature = "cuda")))]
-pub use test_tool::{call_kernel, GpuScalar};
+pub use test_tool::*;

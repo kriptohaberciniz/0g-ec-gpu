@@ -7,8 +7,9 @@ fn main() {
     use ec_gpu_gen::SourceBuilder;
 
     let source_builder = SourceBuilder::new()
-        .add_fft::<chosen_ark_suite::Fr>()
-        .add_multiexp::<chosen_ark_suite::G1Affine, chosen_ark_suite::Fq>()
-        .add_multiexp::<chosen_ark_suite::G2Affine, chosen_ark_suite::Fq2>();
+        //.add_fft::<chosen_ark_suite::Fr>()
+        //.add_multiexp::<chosen_ark_suite::G1Affine, chosen_ark_suite::Fq>()
+        //.add_multiexp::<chosen_ark_suite::G2Affine, chosen_ark_suite::Fq2>()
+        .add_fftg::<chosen_ark_suite::G1Affine, chosen_ark_suite::Fq>();
     ec_gpu_gen::generate(&source_builder);
 }

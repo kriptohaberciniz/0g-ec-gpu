@@ -29,13 +29,19 @@ mod program;
 mod source;
 
 #[cfg(test)]
-extern crate ark_bls12_381 as chosen_ark_suite;
+//extern crate ark_bls12_381 as chosen_ark_suite;
+extern crate ark_bn254 as chosen_ark_suite;
 
 /// Fast Fourier Transform on the GPU.
 #[cfg(any(feature = "cuda", feature = "opencl"))]
 pub mod fft;
 /// Fast Fourier Transform on the CPU.
 pub mod fft_cpu;
+/// Fast Fourier Transform for G1 on the GPU.
+#[cfg(any(feature = "cuda", feature = "opencl"))]
+pub mod fftg;
+/// Fast Fourier Transform for G1 on the CPU.
+pub mod fftg_cpu;
 /// Multiexponentiation on the GPU.
 #[cfg(any(feature = "cuda", feature = "opencl"))]
 pub mod multiexp;
