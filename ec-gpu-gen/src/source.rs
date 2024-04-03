@@ -750,10 +750,8 @@ mod test_tool {
     use chosen_ark_suite::Fq as Base;
     use chosen_ark_suite::Fr as Scalar;
     use chosen_ark_suite::G1Affine;
-    use chosen_ark_suite::G1Projective as G1;
 
     use ark_ff::Field;
-    use ec_gpu::PrimeFieldRepr;
     use lazy_static::lazy_static;
     use std::sync::Mutex;
 

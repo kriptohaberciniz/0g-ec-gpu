@@ -1,7 +1,7 @@
+use crate::pow_vartime;
 #[cfg(feature = "cuda")]
 use crate::source::CUDA_PROGRAM;
 use crate::source::{call_kernel, GpuScalar};
-use crate::{pow_vartime, program};
 
 use ark_ff::UniformRand;
 use ark_ff::{Field, PrimeField};
@@ -42,7 +42,7 @@ impl_kernel_wrapper!(GpuBigInt);
 
 #[test]
 fn test_ec() {
-    use rust_gpu_tools::{program_closures, Device, GPUError, Program};
+    use rust_gpu_tools::{program_closures, GPUError};
     let mut rng = thread_rng();
     for _ in 0..100 {
         let a = Curve::rand(&mut rng);
@@ -53,7 +53,7 @@ fn test_ec() {
 
             let buffer = program.create_buffer_from_slice(&cpu_buffer).unwrap();
 
-            let kernel = program.create_kernel("test_ec", 1, 1).unwrap();
+            let kernel = program.create_kernel("test_ec", 1, 512).unwrap();
             kernel
                 .arg(&GpuCurve(a))
                 .arg(&GpuScalar(b))

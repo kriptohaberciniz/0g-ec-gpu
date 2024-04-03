@@ -3,10 +3,10 @@
 use std::time::Instant;
 
 use ark_bn254::{Fr, G1Affine};
-use ark_ec::{AffineRepr, CurveGroup};
+use ark_ec::AffineRepr;
 use ark_ff::FftField;
-use ark_poly::Radix2EvaluationDomain;
 use ark_poly::EvaluationDomain;
+use ark_poly::Radix2EvaluationDomain;
 use ark_std::UniformRand;
 use ec_gpu_gen::{
     fftg::FftGKernel,
@@ -46,9 +46,8 @@ pub fn gpu_fftg_consistency() {
         let mut v1_coeffs = (0..d)
             .map(|_| G1Affine::rand(&mut rng).into_group())
             .collect::<Vec<_>>();
-        let v1_omega = omega::<Fr>(v1_coeffs.len());
+        let v1_omega = Fr::get_root_of_unity(v1_coeffs.len() as u64).unwrap();
         let mut v2_coeffs = v1_coeffs.clone();
-        let v2_omega = v1_omega;
 
         println!("Testing FFTg for {} elements...", d);
 
@@ -60,22 +59,14 @@ pub fn gpu_fftg_consistency() {
 
         let fft_domain = Radix2EvaluationDomain::<Fr>::new(v2_coeffs.len()).unwrap();
         now = Instant::now();
-        // if log_d <= log_threads {
-        //     serial_fftg::<G1Affine>(&mut v2_coeffs, &v2_omega, log_d);
-        // } else {
-        //     parallel_fftg::<G1Affine>(&mut v2_coeffs, &worker, &v2_omega, log_d, log_threads);
-        // }
         fft_domain.fft_in_place(&mut v2_coeffs);
+
         let cpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
         println!("CPU ({} cores) took {}ms.", 1 << log_threads, cpu_dur);
 
         println!("Speedup: x{}", cpu_dur as f32 / gpu_dur as f32);
 
-        let v1_coeffs: Vec<_> = v1_coeffs.iter().map(|proj| proj.into_affine()).collect();
-        let v2_coeffs: Vec<_> = v2_coeffs.iter().map(|proj| proj.into_affine()).collect();
-        // println!("gpu results: {:?}", v1_coeffs);
-        // println!("cpu results: {:?}", v2_coeffs);
-        assert!(v1_coeffs == v2_coeffs);
+        assert_eq!(v1_coeffs, v2_coeffs);
         println!("============================");
     }
 }

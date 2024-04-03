@@ -1,5 +1,4 @@
 use std::cmp;
-use std::ops::MulAssign;
 use std::sync::{Arc, RwLock};
 
 use ark_ff::Field;
@@ -13,7 +12,6 @@ use crate::threadpool::THREAD_POOL;
 
 const LOG2_MAX_ELEMENTS: usize = 32; // At most 2^32 elements is supported.
 const MAX_LOG2_RADIX: u32 = 8; // Radix256
-const MAX_LOG2_LOCAL_WORK_SIZE: u32 = 7; // 128
 
 /// FFT kernel for a single GPU.
 pub struct SingleFftGKernel<'a, G>
@@ -68,16 +66,17 @@ where
 
             // Precalculate:
             // [omega^(0/(2^(deg-1))), omega^(1/(2^(deg-1))), ..., omega^((2^(deg-1)-1)/(2^(deg-1)))]
-            let mut pq = vec![G::Scalar::ZERO; 1 << max_deg >> 1];
+            // let mut pq = vec![G::Scalar::ZERO; 1 << max_deg >> 1];
             let twiddle = pow_vartime(omega, [(n >> max_deg) as u64]);
-            pq[0] = G::Scalar::ONE;
-            if max_deg > 1 {
-                pq[1] = twiddle;
-                for i in 2..(1 << max_deg >> 1) {
-                    pq[i] = pq[i - 1];
-                    pq[i].mul_assign(&twiddle);
-                }
-            }
+            let pq = vec![twiddle];
+            // pq[0] = G::Scalar::ONE;
+            // if max_deg > 1 {
+            //     pq[1] = twiddle;
+            //     for i in 2..(1 << max_deg >> 1) {
+            //         pq[i] = pq[i - 1];
+            //         pq[i].mul_assign(&twiddle);
+            //     }
+            // }
             let pq_buffer = program.create_buffer_from_slice(&pq)?;
 
             // Precalculate [omega, omega^2, omega^4, omega^8, ..., omega^(2^31)]
@@ -103,23 +102,38 @@ where
                 let deg = cmp::min(max_deg, log_n - log_p);
 
                 let n = 1u32 << log_n;
-                let local_work_size = 1 << cmp::min(deg - 1, MAX_LOG2_LOCAL_WORK_SIZE);
-                let global_work_size = n >> deg;
+
+                let virtual_local_work_size = 1 << (deg - 1);
+
+                // The algorithm may require a small local_network_size. However, too small local_network_size will undermine the performance. So we allocate a larger local_network_size, but translate the global parameter before execution.
+                let physical_local_work_size = if virtual_local_work_size >= 32 {
+                    virtual_local_work_size
+                } else if n <= 64 {
+                    virtual_local_work_size
+                } else {
+                    32
+                };
+                let global_work_size = n / 2 / physical_local_work_size;
+
                 let kernel_name = format!("{}_radix_fftg", G::name());
                 let kernel = program.create_kernel(
                     &kernel_name,
                     global_work_size as usize,
-                    local_work_size as usize,
+                    physical_local_work_size as usize,
                 )?;
+                // dbg!(n, deg, max_deg, log_p, global_work_size, physical_local_work_size, virtual_local_work_size);
                 kernel
                     .arg(&src_buffer)
                     .arg(&dst_buffer)
                     .arg(&pq_buffer)
                     .arg(&omegas_buffer)
-                    .arg(&LocalBuffer::<G::Curve>::new(1 << deg))
+                    .arg(&LocalBuffer::<G::Curve>::new(
+                        2 * physical_local_work_size as usize,
+                    ))
                     .arg(&n)
                     .arg(&log_p)
                     .arg(&deg)
+                    .arg(&virtual_local_work_size)
                     .arg(&max_deg)
                     .run()?;
 

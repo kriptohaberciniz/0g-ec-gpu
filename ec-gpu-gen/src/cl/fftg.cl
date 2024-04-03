@@ -9,6 +9,7 @@ KERNEL void POINT_radix_fftg(GLOBAL POINT_jacobian* x, // Source buffer
                       uint n, // Number of elements
                       uint lgp, // Log2 of `p` (Read more in the link above)
                       uint deg, // 1=>radix2, 2=>radix4, 3=>radix8, ...
+                      uint vbs, // Virtual block size, the algorithm may require a small block size, which will damage the performance
                       uint max_deg) // Maximum degree supported, according to `pq` and `omegas`
 {
 // CUDA doesn't support local buffers ("shared memory" in CUDA lingo) as function arguments,
@@ -23,6 +24,12 @@ KERNEL void POINT_radix_fftg(GLOBAL POINT_jacobian* x, // Source buffer
   uint lid = GET_LOCAL_ID();
   uint lsize = GET_LOCAL_SIZE();
   uint index = GET_GROUP_ID();
+
+  index = index * (lsize / vbs) + (lid / vbs);
+  u += (lid / vbs) * vbs * 2;
+  lid = lid & (vbs - 1);
+  lsize = vbs;
+   
   uint t = n >> deg;
   uint p = 1 << lgp;
   uint k = index & (p - 1);
@@ -55,7 +62,8 @@ KERNEL void POINT_radix_fftg(GLOBAL POINT_jacobian* x, // Source buffer
       POINT_jacobian tmp_point = u[i0];
       u[i0] = POINT_add(u[i0], u[i1]);
       u[i1] = POINT_sub(tmp_point, u[i1]);
-      if(di != 0) u[i1] = POINT_mul(u[i1], pq[di << rnd << pqshift]);
+      EXPONENT pq_pow = EXPONENT_pow(pq[0], di << rnd << pqshift);
+      u[i1] = POINT_mul(u[i1], pq_pow);
     }
 
     BARRIER_LOCAL();

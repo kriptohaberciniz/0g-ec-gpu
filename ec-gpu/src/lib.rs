@@ -50,8 +50,6 @@ pub trait GpuCurveAffine:
     type Curve: CurveGroup<Affine = Self> + MulAssign<Self::ScalarField>;
 
     fn is_identity(&self) -> bool;
-
-    fn is_on_curve(&self) -> bool;
 }
 
 pub trait PrimeFieldRepr: ark_ff::PrimeField {

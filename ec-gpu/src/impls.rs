@@ -77,10 +77,6 @@ where
     fn is_identity(&self) -> bool {
         Affine::is_zero(&self)
     }
-
-    fn is_on_curve(&self) -> bool {
-        Affine::is_on_curve(&self)
-    }
 }
 
 impl<T: Any> GpuName for T {
