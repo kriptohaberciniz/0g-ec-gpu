@@ -1,0 +1,17 @@
+[package]
+name = "ec-gpu-program"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rust-gpu-tools = { workspace = true, optional = true }
+thiserror = "1.0.30"
+
+
+[features]
+default = []
+cuda = ["rust-gpu-tools", "rust-gpu-tools/cuda"]
+opencl = ["rust-gpu-tools", "rust-gpu-tools/opencl"]
+test-tools = []
