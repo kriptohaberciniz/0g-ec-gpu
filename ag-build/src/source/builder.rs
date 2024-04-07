@@ -1,17 +1,19 @@
 //! Builder to create the source code of a GPU kernel.
 
-use std::collections::HashSet;
-use std::fmt::Write;
+use std::{collections::HashSet, fmt::Write};
 
-use super::limb::Limb32Or64;
-use super::synthesis::{Ec, EcFft, Fft, Field, Multiexp, NameAndSource};
-use super::template::*;
+use super::{
+    limb::Limb32Or64,
+    synthesis::{Ec, EcFft, Fft, Field, Multiexp, NameAndSource},
+    template::*,
+};
 use ag_types::{GpuCurveAffine, GpuField};
 
-// In the `HashSet`s the concrete types cannot be used, as each item of the set should be able to
-// have its own (different) generic type.
-// We distinguish between extension fields and other fields as sub-fields need to be defined first
-// in the source code (due to being C, where the order of declaration matters).
+// In the `HashSet`s the concrete types cannot be used, as each item of the set
+// should be able to have its own (different) generic type.
+// We distinguish between extension fields and other fields as sub-fields need
+// to be defined first in the source code (due to being C, where the order of
+// declaration matters).
 #[derive(Default)]
 pub struct SourceBuilder {
     /// The [`Field`]s that are used in this kernel.
@@ -32,17 +34,14 @@ pub struct SourceBuilder {
 
 impl SourceBuilder {
     /// Create a new configuration to generation a GPU kernel.
-    pub fn new() -> Self {
-        Self::default()
-    }
+    pub fn new() -> Self { Self::default() }
 
     /// Add a field to the configuration.
     ///
-    /// If it is an extension field, then the extension field *and* the sub-field is added.
+    /// If it is an extension field, then the extension field *and* the
+    /// sub-field is added.
     pub fn add_field<F>(mut self) -> Self
-    where
-        F: GpuField + 'static,
-    {
+    where F: GpuField + 'static {
         let field = Field::<F>::new();
         // If it's an extension field, also add the corresponding sub-field.
         if let Some(sub_field_name) = F::sub_field_name() {
@@ -57,9 +56,7 @@ impl SourceBuilder {
 
     /// Add an FFT kernel function to the configuration.
     pub fn add_fft<F>(self) -> Self
-    where
-        F: GpuField + 'static,
-    {
+    where F: GpuField + 'static {
         let mut config = self.add_field::<F>();
         let fft = Fft::<F>::new();
         config.ffts.insert(Box::new(fft));
@@ -67,9 +64,7 @@ impl SourceBuilder {
     }
 
     pub fn add_ec<C>(self) -> Self
-    where
-        C: GpuCurveAffine + 'static,
-    {
+    where C: GpuCurveAffine + 'static {
         let mut config = self.add_field::<C::Base>().add_field::<C::Scalar>();
         let ec = Ec::<C>::new();
         config.ec.insert(Box::new(ec));
@@ -78,12 +73,10 @@ impl SourceBuilder {
 
     /// Add an FFTg kernel function to the configuration.
     ///
-    /// The field must be given explicitly as currently it cannot derived from the curve point
-    /// directly.
+    /// The field must be given explicitly as currently it cannot derived from
+    /// the curve point directly.
     pub fn add_ec_fft<C>(self) -> Self
-    where
-        C: GpuCurveAffine + 'static,
-    {
+    where C: GpuCurveAffine + 'static {
         let mut config = self.add_ec::<C>();
         let ec_fft = EcFft::<C>::new();
         config.ec_ffts.insert(Box::new(ec_fft));
@@ -92,12 +85,10 @@ impl SourceBuilder {
 
     /// Add an Multiexp kernel function to the configuration.
     ///
-    /// The field must be given explicitly as currently it cannot derived from the curve point
-    /// directly.
+    /// The field must be given explicitly as currently it cannot derived from
+    /// the curve point directly.
     pub fn add_multiexp<C>(self) -> Self
-    where
-        C: GpuCurveAffine + 'static,
-    {
+    where C: GpuCurveAffine + 'static {
         let mut config = self.add_ec::<C>();
         let multiexp = Multiexp::<C>::new();
         config.multiexps.insert(Box::new(multiexp));
@@ -106,9 +97,7 @@ impl SourceBuilder {
 
     #[cfg(test)]
     pub fn add_test<C, F>(self) -> Self
-    where
-        C: GpuCurveAffine + 'static,
-    {
+    where C: GpuCurveAffine + 'static {
         use super::synthesis::Test;
 
         let mut config = self.add_ec::<C>();
@@ -119,22 +108,25 @@ impl SourceBuilder {
 
     /// Appends some given source at the end of the generated source.
     ///
-    /// This is useful for cases where you use this library as building block, but have your own
-    /// kernel implementation. If this function is is called several times, then those sources are
-    /// appended in that call order.
+    /// This is useful for cases where you use this library as building block,
+    /// but have your own kernel implementation. If this function is is
+    /// called several times, then those sources are appended in that call
+    /// order.
     pub fn append_source(mut self, source: String) -> Self {
         self.extra_sources.push(source);
         self
     }
 
-    /// Generate the GPU kernel source code based on the current configuration with 32-bit limbs.
+    /// Generate the GPU kernel source code based on the current configuration
+    /// with 32-bit limbs.
     ///
     /// On CUDA 32-bit limbs are recommended.
     pub fn build_32_bit_limbs(&self) -> String {
         self.build(Limb32Or64::Limb32)
     }
 
-    /// Generate the GPU kernel source code based on the current configuration with 64-bit limbs.
+    /// Generate the GPU kernel source code based on the current configuration
+    /// with 64-bit limbs.
     ///
     /// On OpenCL 32-bit limbs are recommended.
     pub fn build_64_bit_limbs(&self) -> String {
@@ -157,8 +149,7 @@ impl SourceBuilder {
 }
 
 fn write_field(
-    result: &mut String,
-    limb_size: Limb32Or64,
+    result: &mut String, limb_size: Limb32Or64,
     field: &HashSet<Box<dyn NameAndSource>>,
 ) {
     for item in field {

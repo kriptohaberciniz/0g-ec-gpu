@@ -2,9 +2,9 @@
 
 use std::time::Instant;
 
+use ag_build::{self, generate};
 use ark_bn254::Fr;
 use ark_ff::FftField;
-use ag_build::{self, generate};
 use ark_std::UniformRand;
 use ec_gpu_proxy::{
     fft::FftKernel,
@@ -23,9 +23,7 @@ fn omega<F: FftField>(num_coeffs: usize) -> F {
     omega
 }
 
-fn build_fft() {
-    generate(&ag_build::SourceBuilder::new().add_fft::<Fr>())
-}
+fn build_fft() { generate(&ag_build::SourceBuilder::new().add_fft::<Fr>()) }
 
 #[test]
 pub fn gpu_fft_consistency() {
@@ -41,12 +39,14 @@ pub fn gpu_fft_consistency() {
         .map(|device| ec_gpu_program::load_program!(device))
         .collect::<Result<_, _>>()
         .expect("Cannot create programs!");
-    let mut kern = FftKernel::<Fr>::create(programs).expect("Cannot initialize kernel!");
+    let mut kern =
+        FftKernel::<Fr>::create(programs).expect("Cannot initialize kernel!");
 
     for log_d in 1..=16 {
         let d = 1 << log_d;
 
-        let mut v1_coeffs = (0..d).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
+        let mut v1_coeffs =
+            (0..d).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
         let v1_omega = omega::<Fr>(v1_coeffs.len());
         let mut v2_coeffs = v1_coeffs.clone();
         let v2_omega = v1_omega;
@@ -56,16 +56,24 @@ pub fn gpu_fft_consistency() {
         let mut now = Instant::now();
         kern.radix_fft_many(&mut [&mut v1_coeffs], &[v1_omega], &[log_d])
             .expect("GPU FFT failed!");
-        let gpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
+        let gpu_dur = now.elapsed().as_secs() * 1000
+            + now.elapsed().subsec_millis() as u64;
         println!("GPU took {}ms.", gpu_dur);
 
         now = Instant::now();
         if log_d <= log_threads {
             serial_fft::<Fr>(&mut v2_coeffs, &v2_omega, log_d);
         } else {
-            parallel_fft::<Fr>(&mut v2_coeffs, &worker, &v2_omega, log_d, log_threads);
+            parallel_fft::<Fr>(
+                &mut v2_coeffs,
+                &worker,
+                &v2_omega,
+                log_d,
+                log_threads,
+            );
         }
-        let cpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
+        let cpu_dur = now.elapsed().as_secs() * 1000
+            + now.elapsed().subsec_millis() as u64;
         println!("CPU ({} cores) took {}ms.", 1 << log_threads, cpu_dur);
 
         println!("Speedup: x{}", cpu_dur as f32 / gpu_dur as f32);
@@ -89,14 +97,18 @@ pub fn gpu_fft_many_consistency() {
         .map(|device| ec_gpu_program::load_program!(device))
         .collect::<Result<_, _>>()
         .expect("Cannot create programs!");
-    let mut kern = FftKernel::<Fr>::create(programs).expect("Cannot initialize kernel!");
+    let mut kern =
+        FftKernel::<Fr>::create(programs).expect("Cannot initialize kernel!");
 
     for log_d in 1..=20 {
         let d = 1 << log_d;
 
-        let mut v11_coeffs = (0..d).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
-        let mut v12_coeffs = (0..d).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
-        let mut v13_coeffs = (0..d).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
+        let mut v11_coeffs =
+            (0..d).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
+        let mut v12_coeffs =
+            (0..d).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
+        let mut v13_coeffs =
+            (0..d).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
         let v11_omega = omega::<Fr>(v11_coeffs.len());
         let v12_omega = omega::<Fr>(v12_coeffs.len());
         let v13_omega = omega::<Fr>(v13_coeffs.len());
@@ -117,7 +129,8 @@ pub fn gpu_fft_many_consistency() {
             &[log_d, log_d, log_d],
         )
         .expect("GPU FFT failed!");
-        let gpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
+        let gpu_dur = now.elapsed().as_secs() * 1000
+            + now.elapsed().subsec_millis() as u64;
         println!("GPU took {}ms.", gpu_dur);
 
         now = Instant::now();
@@ -126,11 +139,30 @@ pub fn gpu_fft_many_consistency() {
             serial_fft::<Fr>(&mut v22_coeffs, &v22_omega, log_d);
             serial_fft::<Fr>(&mut v23_coeffs, &v23_omega, log_d);
         } else {
-            parallel_fft::<Fr>(&mut v21_coeffs, &worker, &v21_omega, log_d, log_threads);
-            parallel_fft::<Fr>(&mut v22_coeffs, &worker, &v22_omega, log_d, log_threads);
-            parallel_fft::<Fr>(&mut v23_coeffs, &worker, &v23_omega, log_d, log_threads);
+            parallel_fft::<Fr>(
+                &mut v21_coeffs,
+                &worker,
+                &v21_omega,
+                log_d,
+                log_threads,
+            );
+            parallel_fft::<Fr>(
+                &mut v22_coeffs,
+                &worker,
+                &v22_omega,
+                log_d,
+                log_threads,
+            );
+            parallel_fft::<Fr>(
+                &mut v23_coeffs,
+                &worker,
+                &v23_omega,
+                log_d,
+                log_threads,
+            );
         }
-        let cpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
+        let cpu_dur = now.elapsed().as_secs() * 1000
+            + now.elapsed().subsec_millis() as u64;
         println!("CPU ({} cores) took {}ms.", 1 << log_threads, cpu_dur);
 
         println!("Speedup: x{}", cpu_dur as f32 / gpu_dur as f32);

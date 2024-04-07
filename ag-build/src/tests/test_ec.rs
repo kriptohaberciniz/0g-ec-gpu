@@ -1,7 +1,6 @@
 use rand::thread_rng;
 
-use super::program::CUDA_PROGRAM;
-use super::types::*;
+use super::{program::CUDA_PROGRAM, types::*};
 
 use ark_ff::UniformRand;
 
@@ -13,7 +12,9 @@ fn test_ec() {
         let a = Curve::rand(&mut rng);
         let b = Scalar::rand(&mut rng);
         let target = a * b;
-        let closures = program_closures!(|program, _args| -> Result<Curve, GPUError> {
+        let closures = program_closures!(|program,
+                                          _args|
+         -> Result<Curve, GPUError> {
             let mut cpu_buffer = vec![Curve::default()];
 
             let buffer = program.create_buffer_from_slice(&cpu_buffer).unwrap();

@@ -1,15 +1,14 @@
-use ag_types::GpuCurveName;
-use ag_types::{GpuField, GpuName};
-use std::fmt;
-use std::hash::Hash;
-use std::hash::Hasher;
-use std::marker::PhantomData;
+use ag_types::{GpuCurveName, GpuField, GpuName};
+use std::{
+    fmt,
+    hash::{Hash, Hasher},
+    marker::PhantomData,
+};
 
-use super::limb::Limb32Or64;
-use super::template::*;
+use super::{limb::Limb32Or64, template::*};
 
-/// This trait is used to uniquely identify items by some identifier (`name`) and to return the GPU
-/// source code they produce.
+/// This trait is used to uniquely identify items by some identifier (`name`)
+/// and to return the GPU source code they produce.
 pub trait NameAndSource {
     /// The name to identify the item.
     fn name(&self) -> String;
@@ -18,21 +17,17 @@ pub trait NameAndSource {
 }
 
 impl PartialEq for dyn NameAndSource {
-    fn eq(&self, other: &Self) -> bool {
-        self.name() == other.name()
-    }
+    fn eq(&self, other: &Self) -> bool { self.name() == other.name() }
 }
 
 impl Eq for dyn NameAndSource {}
 
 impl Hash for dyn NameAndSource {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name().hash(state)
-    }
+    fn hash<H: Hasher>(&self, state: &mut H) { self.name().hash(state) }
 }
 
-/// Prints the name by default, the source code of the 32-bit limb in the alternate mode via
-/// `{:#?}`.
+/// Prints the name by default, the source code of the 32-bit limb in the
+/// alternate mode via `{:#?}`.
 impl fmt::Debug for dyn NameAndSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if f.alternate() {
@@ -50,34 +45,36 @@ impl fmt::Debug for dyn NameAndSource {
 
 /// A field that might also be an extension field.
 ///
-/// When the field is an extension field, we also add its sub-field to the list of fields. This
-/// enum is used to indicate that it's a sub-field that has a corresponding extension field. This
-/// way we can make sure that when the source is generated, that also the source for the sub-field
-/// is generated, while not having duplicated field definitions.
-// Storing the sub-field as a string is a bit of a hack around Rust's type system. If we would
-// store the generic type, then the enum would need to be generic over two fields, even in
-// the case when no extension field is used. This would make the API harder to use.
+/// When the field is an extension field, we also add its sub-field to the list
+/// of fields. This enum is used to indicate that it's a sub-field that has a
+/// corresponding extension field. This way we can make sure that when the
+/// source is generated, that also the source for the sub-field is generated,
+/// while not having duplicated field definitions.
+// Storing the sub-field as a string is a bit of a hack around Rust's type
+// system. If we would store the generic type, then the enum would need to be
+// generic over two fields, even in the case when no extension field is used.
+// This would make the API harder to use.
 #[derive(Debug)]
 pub enum Field<F: GpuField> {
     /// A field, might be an extension field.
     Field(PhantomData<F>),
-    /// A sub-field with the given name that has a corresponding extension field.
+    /// A sub-field with the given name that has a corresponding extension
+    /// field.
     SubField(String),
 }
 
 impl<F: GpuField> Field<F> {
     /// Create a new field for the given generic type.
     pub fn new() -> Self {
-        // By default it's added as a field. If it's an extension field, then the `add_field()`
-        // function will create a copy of it, as `SubField` variant.
+        // By default it's added as a field. If it's an extension field, then
+        // the `add_field()` function will create a copy of it, as
+        // `SubField` variant.
         Self::Field(PhantomData)
     }
 }
 
 impl<F: GpuField> Default for Field<F> {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 impl<F: GpuField> NameAndSource for Field<F> {
@@ -101,10 +98,12 @@ impl<F: GpuField> NameAndSource for Field<F> {
                 }
             }
             Self::SubField(sub_field_name) => {
-                // The `GpuField` implementation of the extension field contains the constants of
-                // the sub-field. Hence we can just forward the `F`. It's important that those
-                // functions do *not* use the name of the field, else we might generate the
-                // sub-field named like the extension field.
+                // The `GpuField` implementation of the extension field contains
+                // the constants of the sub-field. Hence we can
+                // just forward the `F`. It's important that those
+                // functions do *not* use the name of the field, else we might
+                // generate the sub-field named like the
+                // extension field.
                 field_source::<F>(limb).replace("FIELD", sub_field_name)
             }
         }
@@ -115,15 +114,11 @@ impl<F: GpuField> NameAndSource for Field<F> {
 pub struct Fft<F: GpuName>(PhantomData<F>);
 
 impl<F: GpuName> Fft<F> {
-    pub fn new() -> Self {
-        Self(PhantomData)
-    }
+    pub fn new() -> Self { Self(PhantomData) }
 }
 
 impl<F: GpuName> NameAndSource for Fft<F> {
-    fn name(&self) -> String {
-        F::name()
-    }
+    fn name(&self) -> String { F::name() }
 
     fn source(&self, _limb: Limb32Or64) -> String {
         String::from(FFT_SRC).replace("FIELD", &F::name())
@@ -134,15 +129,11 @@ impl<F: GpuName> NameAndSource for Fft<F> {
 pub struct Ec<C: GpuCurveName>(PhantomData<C>);
 
 impl<C: GpuCurveName> Ec<C> {
-    pub fn new() -> Self {
-        Self(PhantomData)
-    }
+    pub fn new() -> Self { Self(PhantomData) }
 }
 
 impl<C: GpuCurveName> NameAndSource for Ec<C> {
-    fn name(&self) -> String {
-        C::Affine::name()
-    }
+    fn name(&self) -> String { C::Affine::name() }
 
     fn source(&self, _limb: Limb32Or64) -> String {
         String::from(EC_SRC)
@@ -156,15 +147,11 @@ impl<C: GpuCurveName> NameAndSource for Ec<C> {
 pub struct EcFft<C: GpuCurveName>(PhantomData<C>);
 
 impl<C: GpuCurveName> EcFft<C> {
-    pub fn new() -> Self {
-        Self(PhantomData)
-    }
+    pub fn new() -> Self { Self(PhantomData) }
 }
 
 impl<C: GpuCurveName> NameAndSource for EcFft<C> {
-    fn name(&self) -> String {
-        C::Affine::name()
-    }
+    fn name(&self) -> String { C::Affine::name() }
 
     fn source(&self, _limb: Limb32Or64) -> String {
         String::from(EC_FFT_SRC)
@@ -178,15 +165,11 @@ impl<C: GpuCurveName> NameAndSource for EcFft<C> {
 pub struct Multiexp<C: GpuCurveName>(PhantomData<C>);
 
 impl<C: GpuCurveName> Multiexp<C> {
-    pub fn new() -> Self {
-        Self(PhantomData)
-    }
+    pub fn new() -> Self { Self(PhantomData) }
 }
 
 impl<C: GpuCurveName> NameAndSource for Multiexp<C> {
-    fn name(&self) -> String {
-        C::Affine::name()
-    }
+    fn name(&self) -> String { C::Affine::name() }
 
     fn source(&self, _limb: Limb32Or64) -> String {
         String::from(MULTIEXP_SRC)
@@ -201,16 +184,12 @@ pub struct Test<C: GpuCurveName>(PhantomData<C>);
 
 #[cfg(test)]
 impl<C: GpuCurveName> Test<C> {
-    pub fn new() -> Self {
-        Self(PhantomData)
-    }
+    pub fn new() -> Self { Self(PhantomData) }
 }
 
 #[cfg(test)]
 impl<C: GpuCurveName> NameAndSource for Test<C> {
-    fn name(&self) -> String {
-        C::Affine::name()
-    }
+    fn name(&self) -> String { C::Affine::name() }
 
     fn source(&self, _limb: Limb32Or64) -> String {
         String::from(TEST_SRC)

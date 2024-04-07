@@ -4,8 +4,8 @@ use crate::{pow_vartime, threadpool::Worker};
 
 /// Calculate the Fast Fourier Transform on the CPU (single-threaded).
 ///
-/// The input `a` is mutated and contains the result when this function returns. The length of the
-/// input vector must be `2^log_n`.
+/// The input `a` is mutated and contains the result when this function returns.
+/// The length of the input vector must be `2^log_n`.
 #[allow(clippy::many_single_char_names)]
 pub fn serial_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32) {
     fn bitreverse(mut n: u32, l: u32) -> u32 {
@@ -57,11 +57,7 @@ pub fn serial_fft<F: PrimeField>(a: &mut [F], omega: &F, log_n: u32) {
 /// The number of threads used will be `2^log_threads`.
 /// There must be more items to process than threads.
 pub fn parallel_fft<F: PrimeField>(
-    a: &mut [F],
-    worker: &Worker,
-    omega: &F,
-    log_n: u32,
-    log_threads: u32,
+    a: &mut [F], worker: &Worker, omega: &F, log_n: u32, log_threads: u32,
 ) {
     assert!(log_n >= log_threads);
 
@@ -143,13 +139,20 @@ mod tests {
                 for log_d in 0..10 {
                     let d = 1 << log_d;
 
-                    let mut v1_coeffs = (0..d).map(|_| F::rand(&mut *rng)).collect::<Vec<_>>();
+                    let mut v1_coeffs =
+                        (0..d).map(|_| F::rand(&mut *rng)).collect::<Vec<_>>();
                     let mut v2_coeffs = v1_coeffs.clone();
                     let v1_omega = omega::<F>(v1_coeffs.len());
                     let v2_omega = v1_omega;
 
                     for log_threads in log_d..min(log_d + 1, 3) {
-                        parallel_fft::<F>(&mut v1_coeffs, &worker, &v1_omega, log_d, log_threads);
+                        parallel_fft::<F>(
+                            &mut v1_coeffs,
+                            &worker,
+                            &v1_omega,
+                            log_d,
+                            log_threads,
+                        );
                         serial_fft::<F>(&mut v2_coeffs, &v2_omega, log_d);
 
                         assert!(v1_coeffs == v2_coeffs);

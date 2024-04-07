@@ -1,0 +1,28 @@
+[package]
+name = "ag-cuda-ec"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ag-cuda-proxy = { workspace = true }
+rustacuda = { workspace = true }
+ag-types = { workspace = true }
+
+ark-bls12-381 = "0.4.0"
+ark-bn254 = "0.4.0"
+ark-ec = "0.4.2"
+ark-ff = "0.4.2"
+ark-std = { version = "0.4.0", features = ["getrandom"] }
+
+once_cell = "1.19"
+
+[dev-dependencies]
+ark-poly = { version = "0.4.0", features = ["parallel"] }
+ag-cuda-proxy = { workspace = true }
+
+
+[build-dependencies]
+ag-build = { workspace = true, features = ["cuda"] }
+ark-bn254 = "0.4.0"

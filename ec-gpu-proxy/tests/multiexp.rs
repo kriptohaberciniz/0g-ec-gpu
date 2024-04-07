@@ -1,22 +1,22 @@
 #![cfg(any(feature = "cuda", feature = "opencl"))]
 
-use std::sync::Arc;
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
+use ag_build::{self, generate};
+use ag_types::{GpuCurveAffine, PrimeFieldRepr};
 use ark_bn254::{Fr, G1Affine};
 use ark_ec::CurveGroup;
 use ark_ff::UniformRand;
-use ag_build::{self, generate};
-use ag_types::{GpuCurveAffine, PrimeFieldRepr};
 use ec_gpu_program::EcError;
-use ec_gpu_proxy::multiexp_cpu::{multiexp_cpu, FullDensity, QueryDensity, SourceBuilder};
-use ec_gpu_proxy::{multiexp::MultiexpKernel, threadpool::Worker};
+use ec_gpu_proxy::{
+    multiexp::MultiexpKernel,
+    multiexp_cpu::{multiexp_cpu, FullDensity, QueryDensity, SourceBuilder},
+    threadpool::Worker,
+};
 use rust_gpu_tools::Device;
 
 fn multiexp_gpu<Q, D, G, S>(
-    pool: &Worker,
-    bases: S,
-    density_map: D,
+    pool: &Worker, bases: S, density_map: D,
     exponents: Arc<Vec<<G::Scalar as PrimeFieldRepr>::Repr>>,
     kern: &mut MultiexpKernel<G>,
 ) -> Result<G::Curve, EcError>
@@ -47,8 +47,8 @@ fn gpu_multiexp_consistency() {
         .map(|device| ec_gpu_program::load_program!(device))
         .collect::<Result<_, _>>()
         .expect("Cannot create programs!");
-    let mut kern =
-        MultiexpKernel::<G1Affine>::create(programs, &devices).expect("Cannot initialize kernel!");
+    let mut kern = MultiexpKernel::<G1Affine>::create(programs, &devices)
+        .expect("Cannot initialize kernel!");
     let pool = Worker::new();
 
     let mut rng = rand::thread_rng();
@@ -72,17 +72,26 @@ fn gpu_multiexp_consistency() {
         //println!("v[0] = {:?}", v[0]);
 
         let mut now = Instant::now();
-        let gpu = multiexp_gpu(&pool, (g.clone(), 0), FullDensity, v.clone(), &mut kern).unwrap();
+        let gpu = multiexp_gpu(
+            &pool,
+            (g.clone(), 0),
+            FullDensity,
+            v.clone(),
+            &mut kern,
+        )
+        .unwrap();
 
         // 如果没有错误，继续使用gpu值进行后续操作
-        let gpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
+        let gpu_dur = now.elapsed().as_secs() * 1000
+            + now.elapsed().subsec_millis() as u64;
         println!("GPU took {}ms.", gpu_dur);
 
         now = Instant::now();
         let cpu = multiexp_cpu(&pool, (g.clone(), 0), FullDensity, v.clone())
             .wait()
             .unwrap();
-        let cpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
+        let cpu_dur = now.elapsed().as_secs() * 1000
+            + now.elapsed().subsec_millis() as u64;
         println!("CPU took {}ms.", cpu_dur);
 
         println!("Speedup: x{}", cpu_dur as f32 / gpu_dur as f32);

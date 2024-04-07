@@ -3,7 +3,7 @@ use ag_types::GpuField;
 use std::fmt::Write;
 
 macro_rules! include_cl {
-    ($file: literal) => {
+    ($file:literal) => {
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/cl/", $file))
     };
 }
@@ -50,8 +50,11 @@ where
     let one_def = const_field("FIELD_ONE", one);
     let zero_def = const_field("FIELD_ZERO", vec![L::zero(); limbs]);
     let inv_def = format!("#define FIELD_INV {}", inv.value());
-    let type_def = "typedef struct { FIELD_limb val[FIELD_LIMBS]; } FIELD;".to_string();
-    let type_repr_def = "typedef struct { FIELD_limb val[FIELD_LIMBS]; } FIELD_repr;".to_string();
+    let type_def =
+        "typedef struct { FIELD_limb val[FIELD_LIMBS]; } FIELD;".to_string();
+    let type_repr_def =
+        "typedef struct { FIELD_limb val[FIELD_LIMBS]; } FIELD_repr;"
+            .to_string();
     [
         limb_def,
         limbs_def,
@@ -104,7 +107,11 @@ where
         )?;
         if len > 1 {
             write!(result, "asm(")?;
-            writeln!(result, "\"{}.cc.{} %0, %0, %{};\\r\\n\"", op, ptx_type, len)?;
+            writeln!(
+                result,
+                "\"{}.cc.{} %0, %0, %{};\\r\\n\"",
+                op, ptx_type, len
+            )?;
 
             for i in 1..len - 1 {
                 writeln!(

@@ -1,9 +1,9 @@
-#[cfg(any(feature="cuda", feature="opencl"))]
+#[cfg(any(feature = "cuda", feature = "opencl"))]
 mod program;
-#[cfg(any(feature="cuda", feature="opencl"))]
+#[cfg(any(feature = "cuda", feature = "opencl"))]
 pub use program::*;
 
-#[cfg(not(any(feature="cuda", feature="opencl")))]
+#[cfg(not(any(feature = "cuda", feature = "opencl")))]
 mod place_holder;
 
 /// Errors of this library.

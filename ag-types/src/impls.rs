@@ -1,15 +1,16 @@
 use super::*;
 
-use ark_ec::{models::short_weierstrass::Affine, short_weierstrass::SWCurveConfig};
+use ark_ec::{
+    models::short_weierstrass::Affine, short_weierstrass::SWCurveConfig,
+};
 
-impl<T: MontConfig<N>, const N: usize> PrimeFieldRepr for ark_ff::Fp<MontBackend<T, N>, N>
-where
-    Self: PrimeField,
+impl<T: MontConfig<N>, const N: usize> PrimeFieldRepr
+    for ark_ff::Fp<MontBackend<T, N>, N>
+where Self: PrimeField
 {
     type Repr = BigInt<N>;
-    fn to_repr(&self) -> Self::Repr {
-        MontConfig::into_bigint(self.clone())
-    }
+
+    fn to_repr(&self) -> Self::Repr { MontConfig::into_bigint(self.clone()) }
 
     fn from_repr(repr: Self::Repr) -> Option<Self> {
         MontConfig::from_bigint(repr)
@@ -17,43 +18,31 @@ where
 }
 
 fn u64_to_u32(limbs: &[u64]) -> Vec<u32> {
-    let split_u64 = |limb: &u64| [(limb & u32::MAX as u64) as u32, (limb >> 32) as u32];
+    let split_u64 =
+        |limb: &u64| [(limb & u32::MAX as u64) as u32, (limb >> 32) as u32];
     limbs.iter().flat_map(split_u64).collect()
 }
 
-impl<T: MontConfig<N>, const N: usize> GpuField for ark_ff::Fp<MontBackend<T, N>, N> {
-    fn one() -> Vec<u32> {
-        u64_to_u32(&Self::R.0[..])
-    }
+impl<T: MontConfig<N>, const N: usize> GpuField
+    for ark_ff::Fp<MontBackend<T, N>, N>
+{
+    fn one() -> Vec<u32> { u64_to_u32(&Self::R.0[..]) }
 
-    fn r2() -> Vec<u32> {
-        u64_to_u32(&Self::R2.0[..])
-    }
+    fn r2() -> Vec<u32> { u64_to_u32(&Self::R2.0[..]) }
 
-    fn modulus() -> Vec<u32> {
-        u64_to_u32(&Self::MODULUS.0[..])
-    }
+    fn modulus() -> Vec<u32> { u64_to_u32(&Self::MODULUS.0[..]) }
 }
 
 impl<P: Fp2Config> GpuField for ark_ff::Fp2<P>
-where
-    P::Fp: GpuField,
+where P::Fp: GpuField
 {
-    fn one() -> Vec<u32> {
-        <P::Fp as GpuField>::one()
-    }
+    fn one() -> Vec<u32> { <P::Fp as GpuField>::one() }
 
-    fn r2() -> Vec<u32> {
-        <P::Fp as GpuField>::r2()
-    }
+    fn r2() -> Vec<u32> { <P::Fp as GpuField>::r2() }
 
-    fn modulus() -> Vec<u32> {
-        <P::Fp as GpuField>::modulus()
-    }
+    fn modulus() -> Vec<u32> { <P::Fp as GpuField>::modulus() }
 
-    fn sub_field_name() -> Option<String> {
-        Some(<P::Fp as GpuName>::name())
-    }
+    fn sub_field_name() -> Option<String> { Some(<P::Fp as GpuName>::name()) }
 }
 
 impl<P: SWCurveConfig> GpuRepr for Affine<P> {
@@ -73,12 +62,11 @@ where
     <Affine<P> as ark_ec::AffineRepr>::ScalarField: GpuField + PrimeFieldRepr,
     <Affine<P> as ark_ec::AffineRepr>::BaseField: GpuField,
 {
-    type Scalar = <Affine<P> as ark_ec::AffineRepr>::ScalarField;
     type Base = <Affine<P> as ark_ec::AffineRepr>::BaseField;
     type Curve = <Affine<P> as ark_ec::AffineRepr>::Group;
-    fn is_identity(&self) -> bool {
-        Affine::is_zero(&self)
-    }
+    type Scalar = <Affine<P> as ark_ec::AffineRepr>::ScalarField;
+
+    fn is_identity(&self) -> bool { Affine::is_zero(&self) }
 }
 
 impl<T: GpuCurveAffine> GpuCurveName for T {
@@ -88,7 +76,5 @@ impl<T: GpuCurveAffine> GpuCurveName for T {
 }
 
 impl<T: Any> GpuName for T {
-    fn name() -> String {
-        name!()
-    }
+    fn name() -> String { name!() }
 }

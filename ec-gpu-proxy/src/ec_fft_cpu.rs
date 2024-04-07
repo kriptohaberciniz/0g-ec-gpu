@@ -1,18 +1,17 @@
-use ark_ff::{Field, PrimeField, Zero};
 use ag_types::GpuCurveAffine;
+use ark_ff::{Field, PrimeField, Zero};
 use std::ops::MulAssign;
 
 use crate::{pow_vartime, threadpool::Worker};
 
 /// Calculate the Fast Fourier Transform on the CPU (single-threaded).
 ///
-/// The input `a` is mutated and contains the result when this function returns. The length of the
-/// input vector must be `2^log_n`.
+/// The input `a` is mutated and contains the result when this function returns.
+/// The length of the input vector must be `2^log_n`.
 #[allow(clippy::many_single_char_names)]
-pub fn serial_ec_fft<G: GpuCurveAffine>(a: &mut [G::Curve], omega: &G::Scalar, log_n: u32)
-where
-    G::Scalar: PrimeField,
-{
+pub fn serial_ec_fft<G: GpuCurveAffine>(
+    a: &mut [G::Curve], omega: &G::Scalar, log_n: u32,
+) where G::Scalar: PrimeField {
     fn bitreverse(mut n: u32, l: u32) -> u32 {
         let mut r = 0;
         for _ in 0..l {
@@ -62,10 +61,7 @@ where
 /// The number of threads used will be `2^log_threads`.
 /// There must be more items to process than threads.
 pub fn parallel_ec_fft<G: GpuCurveAffine>(
-    a: &mut [G::Curve],
-    worker: &Worker,
-    omega: &G::Scalar,
-    log_n: u32,
+    a: &mut [G::Curve], worker: &Worker, omega: &G::Scalar, log_n: u32,
     log_threads: u32,
 ) where
     G::Scalar: PrimeField,
@@ -144,9 +140,7 @@ mod tests {
         use std::cmp::min;
 
         fn test_consistency<G: GpuCurveAffine, R: RngCore>(rng: &mut R)
-        where
-            G::Scalar: PrimeField,
-        {
+        where G::Scalar: PrimeField {
             let worker = Worker::new();
 
             for _ in 0..5 {
@@ -161,7 +155,13 @@ mod tests {
                     let v2_omega = v1_omega;
 
                     for log_threads in log_d..min(log_d + 1, 3) {
-                        parallel_ec_fft::<G>(&mut v1_coeffs, &worker, &v1_omega, log_d, log_threads);
+                        parallel_ec_fft::<G>(
+                            &mut v1_coeffs,
+                            &worker,
+                            &v1_omega,
+                            log_d,
+                            log_threads,
+                        );
                         serial_ec_fft::<G>(&mut v2_coeffs, &v2_omega, log_d);
 
                         assert!(v1_coeffs == v2_coeffs);

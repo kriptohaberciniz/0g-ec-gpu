@@ -1,10 +1,13 @@
-use std::ops::AddAssign;
-use std::sync::{Arc, RwLock};
+use std::{
+    ops::AddAssign,
+    sync::{Arc, RwLock},
+};
 
+use ag_types::{
+    GpuCurveAffine, GpuName, GpuRepr, PrimeFieldRepr as PrimeField,
+};
 use ark_ec::Group;
 use ark_ff::Zero;
-use ag_types::PrimeFieldRepr as PrimeField;
-use ag_types::{GpuCurveAffine, GpuName, GpuRepr};
 use ec_gpu_program::{EcError, EcResult};
 use log::{error, info};
 use rust_gpu_tools::{program_closures, Device, Program};
@@ -12,7 +15,8 @@ use yastl::Scope;
 
 use crate::threadpool::Worker;
 
-/// On the GPU, the exponents are split into windows, this is the maximum number of such windows.
+/// On the GPU, the exponents are split into windows, this is the maximum number
+/// of such windows.
 const MAX_WINDOW_SIZE: usize = 10;
 /// In CUDA this is the number of blocks per grid (grid size).
 const LOCAL_WORK_SIZE: usize = 128;
@@ -30,11 +34,14 @@ const fn div_ceil(a: usize, b: usize) -> usize {
     }
 }
 
-/// The number of units the work is split into. One unit will result in one CUDA thread.
+/// The number of units the work is split into. One unit will result in one CUDA
+/// thread.
 ///
-/// Based on empirical results, it turns out that on Nvidia devices with the Ampere architecture,
-/// it's faster to use two times the number of work units.
-const fn work_units(compute_units: u32, compute_capabilities: Option<(u32, u32)>) -> usize {
+/// Based on empirical results, it turns out that on Nvidia devices with the
+/// Ampere architecture, it's faster to use two times the number of work units.
+const fn work_units(
+    compute_units: u32, compute_capabilities: Option<(u32, u32)>,
+) -> usize {
     match compute_capabilities {
         Some((AMPERE, _)) => LOCAL_WORK_SIZE * compute_units as usize * 2,
         _ => LOCAL_WORK_SIZE * compute_units as usize,
@@ -43,18 +50,18 @@ const fn work_units(compute_units: u32, compute_capabilities: Option<(u32, u32)>
 
 /// Multiexp kernel for a single GPU.
 pub struct SingleMultiexpKernel<'a, G>
-where
-    G: GpuCurveAffine,
+where G: GpuCurveAffine
 {
     program: Program,
-    /// The number of exponentiations the GPU can handle in a single execution of the kernel.
+    /// The number of exponentiations the GPU can handle in a single execution
+    /// of the kernel.
     n: usize,
-    /// The number of units the work is split into. It will results in this amount of threads on
-    /// the GPU.
+    /// The number of units the work is split into. It will results in this
+    /// amount of threads on the GPU.
     work_units: usize,
-    /// An optional function which will be called at places where it is possible to abort the
-    /// multiexp calculations. If it returns true, the calculation will be aborted with an
-    /// [`EcError::Aborted`].
+    /// An optional function which will be called at places where it is
+    /// possible to abort the multiexp calculations. If it returns true,
+    /// the calculation will be aborted with an [`EcError::Aborted`].
     maybe_abort: Option<&'a (dyn Fn() -> bool + Send + Sync)>,
 
     _phantom: std::marker::PhantomData<G::Scalar>,
@@ -76,7 +83,8 @@ where
     let term_size = aff_size + exp_size;
     // The number of buckets needed for one work unit
     let max_buckets_per_work_unit = 1 << MAX_WINDOW_SIZE;
-    // The amount of memory (in bytes) we need for the intermediate steps (buckets).
+    // The amount of memory (in bytes) we need for the intermediate steps
+    // (buckets).
     let buckets_size = work_units * max_buckets_per_work_unit * proj_size;
     // The amount of memory (in bytes) we need for the results.
     let results_size = work_units * proj_size;
@@ -86,22 +94,20 @@ where
 
 /// The size of the exponent in bytes.
 ///
-/// It's the actual bytes size it needs in memory, not it's theoratical bit size.
-fn exp_size<F: PrimeField>() -> usize {
-    std::mem::size_of::<F::Repr>()
-}
+/// It's the actual bytes size it needs in memory, not it's theoratical bit
+/// size.
+fn exp_size<F: PrimeField>() -> usize { std::mem::size_of::<F::Repr>() }
 
 impl<'a, G> SingleMultiexpKernel<'a, G>
-where
-    G: GpuCurveAffine + GpuName,
+where G: GpuCurveAffine + GpuName
 {
     /// Create a new Multiexp kernel instance for a device.
     ///
-    /// The `maybe_abort` function is called when it is possible to abort the computation, without
-    /// leaving the GPU in a weird state. If that function returns `true`, execution is aborted.
+    /// The `maybe_abort` function is called when it is possible to abort the
+    /// computation, without leaving the GPU in a weird state. If that
+    /// function returns `true`, execution is aborted.
     pub fn create(
-        program: Program,
-        device: &Device,
+        program: Program, device: &Device,
         maybe_abort: Option<&'a (dyn Fn() -> bool + Send + Sync)>,
     ) -> EcResult<Self> {
         let mem = device.memory();
@@ -121,13 +127,12 @@ where
 
     /// Run the actual multiexp computation on the GPU.
     ///
-    /// The number of `bases` and `exponents` are determined by [`SingleMultiexpKernel`]`::n`, this
-    /// means that it is guaranteed that this amount of calculations fit on the GPU this kernel is
+    /// The number of `bases` and `exponents` are determined by
+    /// [`SingleMultiexpKernel`]`::n`, this means that it is guaranteed that
+    /// this amount of calculations fit on the GPU this kernel is
     /// running on.
     pub fn multiexp(
-        &self,
-        bases: &[G],
-        exponents: &[<G::Scalar as PrimeField>::Repr],
+        &self, bases: &[G], exponents: &[<G::Scalar as PrimeField>::Repr],
     ) -> EcResult<G::Curve> {
         assert_eq!(bases.len(), exponents.len());
 
@@ -137,33 +142,46 @@ where
             }
         }
         let window_size = self.calc_window_size(bases.len());
-        // windows_size * num_windows needs to be >= 256 in order for the kernel to work correctly.
+        // windows_size * num_windows needs to be >= 256 in order for the kernel
+        // to work correctly.
         let num_windows = div_ceil(256, window_size);
         let num_groups = self.work_units / num_windows;
         let bucket_len = 1 << window_size;
 
-        let bases_gpu: Vec<_> = bases.iter().map(GpuRepr::to_gpu_repr).collect();
+        let bases_gpu: Vec<_> =
+            bases.iter().map(GpuRepr::to_gpu_repr).collect();
 
-        // Each group will have `num_windows` threads and as there are `num_groups` groups, there will
-        // be `num_groups` * `num_windows` threads in total.
-        // Each thread will use `num_groups` * `num_windows` * `bucket_len` buckets.
+        // Each group will have `num_windows` threads and as there are
+        // `num_groups` groups, there will be `num_groups` *
+        // `num_windows` threads in total. Each thread will use
+        // `num_groups` * `num_windows` * `bucket_len` buckets.
 
-        let closures = program_closures!(|program, _arg| -> EcResult<Vec<G::Curve>> {
+        let closures = program_closures!(|program,
+                                          _arg|
+         -> EcResult<Vec<G::Curve>> {
             let base_buffer = program.create_buffer_from_slice(&bases_gpu)?;
             let exp_buffer = program.create_buffer_from_slice(exponents)?;
 
             // It is safe as the GPU will initialize that buffer
-            let bucket_buffer =
-                unsafe { program.create_buffer::<G::Curve>(self.work_units * bucket_len)? };
+            let bucket_buffer = unsafe {
+                program
+                    .create_buffer::<G::Curve>(self.work_units * bucket_len)?
+            };
             // It is safe as the GPU will initialize that buffer
-            let result_buffer = unsafe { program.create_buffer::<G::Curve>(self.work_units)? };
+            let result_buffer =
+                unsafe { program.create_buffer::<G::Curve>(self.work_units)? };
 
-            // The global work size follows CUDA's definition and is the number of
-            // `LOCAL_WORK_SIZE` sized thread groups.
-            let global_work_size = div_ceil(num_windows * num_groups, LOCAL_WORK_SIZE);
+            // The global work size follows CUDA's definition and is the number
+            // of `LOCAL_WORK_SIZE` sized thread groups.
+            let global_work_size =
+                div_ceil(num_windows * num_groups, LOCAL_WORK_SIZE);
 
             let kernel_name = format!("{}_multiexp", G::name());
-            let kernel = program.create_kernel(&kernel_name, global_work_size, LOCAL_WORK_SIZE)?;
+            let kernel = program.create_kernel(
+                &kernel_name,
+                global_work_size,
+                LOCAL_WORK_SIZE,
+            )?;
 
             kernel
                 .arg(&base_buffer)
@@ -185,8 +203,9 @@ where
 
         let results: Vec<G::Curve> = self.program.run(closures, ())?;
 
-        // Using the algorithm below, we can calculate the final result by accumulating the results
-        // of those `NUM_GROUPS` * `NUM_WINDOWS` threads.
+        // Using the algorithm below, we can calculate the final result by
+        // accumulating the results of those `NUM_GROUPS` *
+        // `NUM_WINDOWS` threads.
         let mut acc = G::Curve::zero();
         let mut bits = 0;
         let exp_bits = exp_size::<G::Scalar>() * 8;
@@ -206,50 +225,52 @@ where
 
     /// Calculates the window size, based on the given number of terms.
     ///
-    /// For best performance, the window size is reduced, so that maximum parallelism is possible.
-    /// If you e.g. have put only a subset of the terms into the GPU memory, then a smaller window
-    /// size leads to more windows, hence more units to work on, as we split the work into
+    /// For best performance, the window size is reduced, so that maximum
+    /// parallelism is possible. If you e.g. have put only a subset of the
+    /// terms into the GPU memory, then a smaller window size leads to more
+    /// windows, hence more units to work on, as we split the work into
     /// `num_windows * num_groups`.
     fn calc_window_size(&self, num_terms: usize) -> usize {
-        // The window size was determined by running the `gpu_multiexp_consistency` test and
-        // looking at the resulting numbers.
-        let window_size = ((div_ceil(num_terms, self.work_units) as f64).log2() as usize) + 2;
+        // The window size was determined by running the
+        // `gpu_multiexp_consistency` test and looking at the resulting
+        // numbers.
+        let window_size =
+            ((div_ceil(num_terms, self.work_units) as f64).log2() as usize) + 2;
         std::cmp::min(window_size, MAX_WINDOW_SIZE)
     }
 }
 
 /// A struct that containts several multiexp kernels for different devices.
 pub struct MultiexpKernel<'a, G>
-where
-    G: GpuCurveAffine,
+where G: GpuCurveAffine
 {
     kernels: Vec<SingleMultiexpKernel<'a, G>>,
 }
 
 impl<'a, G> MultiexpKernel<'a, G>
-where
-    G: GpuCurveAffine + GpuName,
+where G: GpuCurveAffine + GpuName
 {
     /// Create new kernels, one for each given device.
-    pub fn create(programs: Vec<Program>, devices: &[&Device]) -> EcResult<Self> {
+    pub fn create(
+        programs: Vec<Program>, devices: &[&Device],
+    ) -> EcResult<Self> {
         Self::create_optional_abort(programs, devices, None)
     }
 
     /// Create new kernels, one for each given device, with early abort hook.
     ///
-    /// The `maybe_abort` function is called when it is possible to abort the computation, without
-    /// leaving the GPU in a weird state. If that function returns `true`, execution is aborted.
+    /// The `maybe_abort` function is called when it is possible to abort the
+    /// computation, without leaving the GPU in a weird state. If that
+    /// function returns `true`, execution is aborted.
     pub fn create_with_abort(
-        programs: Vec<Program>,
-        devices: &[&Device],
+        programs: Vec<Program>, devices: &[&Device],
         maybe_abort: &'a (dyn Fn() -> bool + Send + Sync),
     ) -> EcResult<Self> {
         Self::create_optional_abort(programs, devices, Some(maybe_abort))
     }
 
     fn create_optional_abort(
-        programs: Vec<Program>,
-        devices: &[&Device],
+        programs: Vec<Program>, devices: &[&Device],
         maybe_abort: Option<&'a (dyn Fn() -> bool + Send + Sync)>,
     ) -> EcResult<Self> {
         let kernels: Vec<_> = programs
@@ -257,7 +278,8 @@ where
             .zip(devices.iter())
             .filter_map(|(program, device)| {
                 let device_name = program.device_name().to_string();
-                let kernel = SingleMultiexpKernel::create(program, device, maybe_abort);
+                let kernel =
+                    SingleMultiexpKernel::create(program, device, maybe_abort);
                 if let Err(ref e) = kernel {
                     error!(
                         "Cannot initialize kernel for device '{}'! Error: {}",
@@ -285,26 +307,25 @@ where
 
     /// Calculate multiexp on all available GPUs.
     ///
-    /// It needs to run within a [`yastl::Scope`]. This method usually isn't called directly, use
-    /// [`MultiexpKernel::multiexp`] instead.
+    /// It needs to run within a [`yastl::Scope`]. This method usually isn't
+    /// called directly, use [`MultiexpKernel::multiexp`] instead.
     pub fn parallel_multiexp<'s>(
-        &'s mut self,
-        scope: &Scope<'s>,
-        bases: &'s [G],
+        &'s mut self, scope: &Scope<'s>, bases: &'s [G],
         exps: &'s [<G::Scalar as PrimeField>::Repr],
-        results: &'s mut [G::Curve],
-        error: Arc<RwLock<EcResult<()>>>,
+        results: &'s mut [G::Curve], error: Arc<RwLock<EcResult<()>>>,
     ) {
         let num_devices = self.kernels.len();
         let num_exps = exps.len();
         // The maximum number of exponentiations per device.
-        let chunk_size = ((num_exps as f64) / (num_devices as f64)).ceil() as usize;
+        let chunk_size =
+            ((num_exps as f64) / (num_devices as f64)).ceil() as usize;
 
         for (((bases, exps), kern), result) in bases
             .chunks(chunk_size)
             .zip(exps.chunks(chunk_size))
-            // NOTE vmx 2021-11-17: This doesn't need to be a mutable iterator. But when it isn't
-            // there will be errors that the OpenCL CommandQueue cannot be shared between threads
+            // NOTE vmx 2021-11-17: This doesn't need to be a mutable iterator.
+            // But when it isn't there will be errors that the
+            // OpenCL CommandQueue cannot be shared between threads
             // safely.
             .zip(self.kernels.iter_mut())
             .zip(results.iter_mut())
@@ -312,7 +333,9 @@ where
             let error = error.clone();
             scope.execute(move || {
                 let mut acc = G::Curve::zero();
-                for (bases, exps) in bases.chunks(kern.n).zip(exps.chunks(kern.n)) {
+                for (bases, exps) in
+                    bases.chunks(kern.n).zip(exps.chunks(kern.n))
+                {
                     if error.read().unwrap().is_err() {
                         break;
                     }
@@ -335,14 +358,11 @@ where
     ///
     /// This is the main entry point.
     pub fn multiexp(
-        &mut self,
-        pool: &Worker,
-        bases_arc: Arc<Vec<G>>,
-        exps: Arc<Vec<<G::Scalar as PrimeField>::Repr>>,
-        skip: usize,
+        &mut self, pool: &Worker, bases_arc: Arc<Vec<G>>,
+        exps: Arc<Vec<<G::Scalar as PrimeField>::Repr>>, skip: usize,
     ) -> EcResult<G::Curve> {
-        // Bases are skipped by `self.1` elements, when converted from (Arc<Vec<G>>, usize) to Source
-        // https://github.com/zkcrypto/bellman/blob/10c5010fd9c2ca69442dc9775ea271e286e776d8/src/multiexp.rs#L38
+        // Bases are skipped by `self.1` elements, when converted from
+        // (Arc<Vec<G>>, usize) to Source https://github.com/zkcrypto/bellman/blob/10c5010fd9c2ca69442dc9775ea271e286e776d8/src/multiexp.rs#L38
         let bases = &bases_arc[skip..(skip + exps.len())];
         let exps = &exps[..];
 
@@ -368,7 +388,5 @@ where
     }
 
     /// Returns the number of kernels (one per device).
-    pub fn num_kernels(&self) -> usize {
-        self.kernels.len()
-    }
+    pub fn num_kernels(&self) -> usize { self.kernels.len() }
 }

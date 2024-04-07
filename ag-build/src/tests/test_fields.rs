@@ -1,7 +1,9 @@
 use rand::{thread_rng, Rng};
 
-use super::program::call_kernel;
-use super::types::{GpuScalar, Scalar};
+use super::{
+    program::call_kernel,
+    types::{GpuScalar, Scalar},
+};
 
 use ag_types::PrimeFieldRepr;
 use ark_ff::{Field, UniformRand};

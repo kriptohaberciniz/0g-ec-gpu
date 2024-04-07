@@ -1,21 +1,21 @@
 //! Convience function to generate a kernel/source based on a source builder.
 ///
-/// When the `cuda` feature is enabled it will compile a CUDA fatbin. The path to the file is
-/// stored in the `_EC_GPU_CUDA_KERNEL_FATBIN` environment variable, that will automatically be
-/// used by the `ec-gpu-gen` functionality that needs a kernel.
+/// When the `cuda` feature is enabled it will compile a CUDA fatbin. The
+/// path to the file is stored in the `_EC_GPU_CUDA_KERNEL_FATBIN`
+/// environment variable, that will automatically be used by the
+/// `ec-gpu-gen` functionality that needs a kernel.
 ///
 ///
-/// When the `opencl` feature is enabled it will generate the source code for OpenCL. The path to
-/// the source file is stored in the `_EC_GPU_OPENCL_KERNEL_SOURCE` environment variable, that will
-/// automatically be used by the `ec-gpu-gen` functionality that needs a kernel. OpenCL compiles
-/// the source at run time).
+/// When the `opencl` feature is enabled it will generate the source code
+/// for OpenCL. The path to the source file is stored in the
+/// `_EC_GPU_OPENCL_KERNEL_SOURCE` environment variable, that will
+/// automatically be used by the `ec-gpu-gen` functionality that needs a
+/// kernel. OpenCL compiles the source at run time).
 pub use super::source::SourceBuilder;
 
 pub use std::{env, fs, path::PathBuf};
 
-fn in_build_script() -> bool {
-    std::env::var("OUT_DIR").is_ok()
-}
+fn in_build_script() -> bool { std::env::var("OUT_DIR").is_ok() }
 
 fn working_dir() -> String {
     if let Ok(dir) = env::var("ARK_GPU_BUILD_DIR") {
@@ -44,9 +44,9 @@ macro_rules! bprintln {
 pub fn generate_cuda(source_builder: &SourceBuilder) -> PathBuf {
     use sha2::{Digest, Sha256};
 
-    // This is a hack when no properly compiled kernel is needed. That's the case when the
-    // documentation is built on docs.rs and when Clippy is run. We can use arbitrary bytes as
-    // input then.
+    // This is a hack when no properly compiled kernel is needed. That's the
+    // case when the documentation is built on docs.rs and when Clippy is
+    // run. We can use arbitrary bytes as input then.
     if std::env::var("DOCS_RS").is_ok() || cfg!(feature = "cargo-clippy") {
         bprintln!("cargo:rustc-env=_EC_GPU_CUDA_KERNEL_FATBIN=../build.rs");
         return PathBuf::from("../build.rs");
@@ -55,8 +55,8 @@ pub fn generate_cuda(source_builder: &SourceBuilder) -> PathBuf {
     let kernel_source = source_builder.build_32_bit_limbs();
     let out_dir = working_dir();
 
-    // Make it possible to override the default options. Though the source and output file is
-    // always set automatically.
+    // Make it possible to override the default options. Though the source and
+    // output file is always set automatically.
     let mut nvcc = match env::var("EC_GPU_CUDA_NVCC_ARGS") {
         Ok(args) => execute::command(format!("nvcc {}", args)),
         Err(_) => {
@@ -74,8 +74,8 @@ pub fn generate_cuda(source_builder: &SourceBuilder) -> PathBuf {
         }
     };
 
-    // Hash the source and the compile flags. Use that as the filename, so that the kernel is only
-    // rebuilt if any of them change.
+    // Hash the source and the compile flags. Use that as the filename, so that
+    // the kernel is only rebuilt if any of them change.
     let mut hasher = Sha256::new();
     hasher.update(kernel_source.as_bytes());
     hasher.update(&format!("{:?}", &nvcc));
@@ -84,9 +84,10 @@ pub fn generate_cuda(source_builder: &SourceBuilder) -> PathBuf {
     let source_path: PathBuf = [&out_dir, &format!("{}.cu", &kernel_digest)]
         .iter()
         .collect();
-    let fatbin_path: PathBuf = [&out_dir, &format!("{}.fatbin", &kernel_digest)]
-        .iter()
-        .collect();
+    let fatbin_path: PathBuf =
+        [&out_dir, &format!("{}.fatbin", &kernel_digest)]
+            .iter()
+            .collect();
 
     fs::write(&source_path, &kernel_source).unwrap_or_else(|_| {
         panic!(
@@ -112,14 +113,17 @@ pub fn generate_cuda(source_builder: &SourceBuilder) -> PathBuf {
         }
     }
 
-    // The idea to put the path to the farbin into a compile-time env variable is from
-    // https://github.com/LutzCle/fast-interconnects-demo/blob/b80ea8e04825167f486ab8ac1b5d67cf7dd51d2c/rust-demo/build.rs
+    // The idea to put the path to the farbin into a compile-time env variable
+    // is from https://github.com/LutzCle/fast-interconnects-demo/blob/b80ea8e04825167f486ab8ac1b5d67cf7dd51d2c/rust-demo/build.rs
     bprintln!(
         "cargo:rustc-env=_EC_GPU_CUDA_KERNEL_FATBIN={}",
         fatbin_path.to_str().unwrap()
     );
     if !in_build_script() {
-        env::set_var("_EC_GPU_CUDA_KERNEL_FATBIN", fatbin_path.to_str().unwrap());
+        env::set_var(
+            "_EC_GPU_CUDA_KERNEL_FATBIN",
+            fatbin_path.to_str().unwrap(),
+        );
     }
 
     fatbin_path
@@ -130,8 +134,8 @@ pub fn generate_opencl(source_builder: &SourceBuilder) -> PathBuf {
     let kernel_source = source_builder.build_64_bit_limbs();
     let out_dir = working_dir();
 
-    // Generating the kernel source is cheap, hence use a fixed name and override it on every
-    // build.
+    // Generating the kernel source is cheap, hence use a fixed name and
+    // override it on every build.
     let source_path: PathBuf = [&out_dir, "kernel.cl"].iter().collect();
 
     fs::write(&source_path, &kernel_source).unwrap_or_else(|_| {

@@ -23,7 +23,6 @@ pub mod multiexp_cpu;
 /// Helpers for multithreaded code.
 pub mod threadpool;
 
-
 fn pow_vartime<F: ark_ff::Field, S: AsRef<[u64]>>(base: &F, exp: S) -> F {
     let mut res = F::ONE;
     for e in exp.as_ref().iter().rev() {

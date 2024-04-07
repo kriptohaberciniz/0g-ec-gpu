@@ -14,14 +14,14 @@ static NUM_THREADS: Lazy<usize> = Lazy::new(read_num_threads);
 
 /// The thread pool that is used for the computations.
 ///
-/// By default, it's size is equal to the number of CPUs. It can be set to a different value with
-/// the `EC_GPU_NUM_THREADS` environment variable.
+/// By default, it's size is equal to the number of CPUs. It can be set to a
+/// different value with the `EC_GPU_NUM_THREADS` environment variable.
 pub static THREAD_POOL: Lazy<Pool> = Lazy::new(|| Pool::new(*NUM_THREADS));
 
 /// Returns the number of threads.
 ///
-/// The number can be set with the `EC_GPU_NUM_THREADS` environment variable. If it isn't set, it
-/// defaults to the number of CPUs the system has.
+/// The number can be set with the `EC_GPU_NUM_THREADS` environment variable. If
+/// it isn't set, it defaults to the number of CPUs the system has.
 fn read_num_threads() -> usize {
     env::var("EC_GPU_NUM_THREADS")
         .ok()
@@ -35,16 +35,12 @@ pub struct Worker {}
 
 impl Worker {
     /// Returns a new worker.
-    pub fn new() -> Worker {
-        Worker {}
-    }
+    pub fn new() -> Worker { Worker {} }
 
     /// Returns binary logarithm (floored) of the number of threads.
     ///
     /// This means, the number of threads is `2^log_num_threads()`.
-    pub fn log_num_threads(&self) -> u32 {
-        log2_floor(*NUM_THREADS)
-    }
+    pub fn log_num_threads(&self) -> u32 { log2_floor(*NUM_THREADS) }
 
     /// Executes a function in a thread and returns a [`Waiter`] immediately.
     pub fn compute<F, R>(&self, f: F) -> Waiter<R>
@@ -56,10 +52,11 @@ impl Worker {
 
         THREAD_POOL.spawn(move || {
             let res = f();
-            // Best effort. We run it in a separate thread, so the receiver might not exist
-            // anymore, but that's OK. It only means that we are not interested in the result.
-            // A message is logged though, as concurrency issues are hard to debug and this might
-            // help in such cases.
+            // Best effort. We run it in a separate thread, so the receiver
+            // might not exist anymore, but that's OK. It only means
+            // that we are not interested in the result.
+            // A message is logged though, as concurrency issues are hard to
+            // debug and this might help in such cases.
             if let Err(SendError(_)) = sender.send(res) {
                 trace!("Cannot send result");
             }
@@ -70,12 +67,10 @@ impl Worker {
 
     /// Executes a function and returns the result once it is finished.
     ///
-    /// The function gets the [`yastl::Scope`] as well as the `chunk_size` as parameters. THe
-    /// `chunk_size` is number of elements per thread.
+    /// The function gets the [`yastl::Scope`] as well as the `chunk_size` as
+    /// parameters. THe `chunk_size` is number of elements per thread.
     pub fn scope<'a, F, R>(&self, elements: usize, f: F) -> R
-    where
-        F: FnOnce(&yastl::Scope<'a>, usize) -> R,
-    {
+    where F: FnOnce(&yastl::Scope<'a>, usize) -> R {
         let chunk_size = if elements < *NUM_THREADS {
             1
         } else {
@@ -85,11 +80,10 @@ impl Worker {
         THREAD_POOL.scoped(|scope| f(scope, chunk_size))
     }
 
-    /// Executes the passed in function, and returns the result once it is finished.
+    /// Executes the passed in function, and returns the result once it is
+    /// finished.
     pub fn scoped<'a, F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&yastl::Scope<'a>) -> R,
-    {
+    where F: FnOnce(&yastl::Scope<'a>) -> R {
         let (sender, receiver) = bounded(1);
         THREAD_POOL.scoped(|s| {
             let res = f(s);
@@ -107,9 +101,7 @@ pub struct Waiter<T> {
 
 impl<T> Waiter<T> {
     /// Wait for the result.
-    pub fn wait(&self) -> T {
-        self.receiver.recv().unwrap()
-    }
+    pub fn wait(&self) -> T { self.receiver.recv().unwrap() }
 
     /// One off sending.
     pub fn done(val: T) -> Self {

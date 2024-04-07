@@ -2,12 +2,11 @@
 
 use std::time::Instant;
 
+use ag_build::generate;
 use ark_bn254::{Fr, G1Affine};
 use ark_ec::AffineRepr;
 use ark_ff::FftField;
-use ag_build::generate;
-use ark_poly::EvaluationDomain;
-use ark_poly::Radix2EvaluationDomain;
+use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::UniformRand;
 use ec_gpu_proxy::{
     ec_fft::EcFftKernel,
@@ -44,7 +43,8 @@ pub fn gpu_ec_fft_consistency() {
         .map(|device| ec_gpu_program::load_program!(device))
         .collect::<Result<_, _>>()
         .expect("Cannot create programs!");
-    let mut kern = EcFftKernel::<G1Affine>::create(programs).expect("Cannot initialize kernel!");
+    let mut kern = EcFftKernel::<G1Affine>::create(programs)
+        .expect("Cannot initialize kernel!");
 
     for log_d in 1..=16 {
         let d = 1 << log_d;
@@ -60,14 +60,17 @@ pub fn gpu_ec_fft_consistency() {
         let mut now = Instant::now();
         kern.radix_ec_fft_many(&mut [&mut v1_coeffs], &[v1_omega], &[log_d])
             .expect("GPU FFTg failed!");
-        let gpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
+        let gpu_dur = now.elapsed().as_secs() * 1000
+            + now.elapsed().subsec_millis() as u64;
         println!("GPU took {}ms.", gpu_dur);
 
-        let fft_domain = Radix2EvaluationDomain::<Fr>::new(v2_coeffs.len()).unwrap();
+        let fft_domain =
+            Radix2EvaluationDomain::<Fr>::new(v2_coeffs.len()).unwrap();
         now = Instant::now();
         fft_domain.fft_in_place(&mut v2_coeffs);
 
-        let cpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
+        let cpu_dur = now.elapsed().as_secs() * 1000
+            + now.elapsed().subsec_millis() as u64;
         println!("CPU ({} cores) took {}ms.", 1 << log_threads, cpu_dur);
 
         println!("Speedup: x{}", cpu_dur as f32 / gpu_dur as f32);
@@ -91,7 +94,8 @@ pub fn gpu_ec_fft_many_consistency() {
         .map(|device| ec_gpu_program::load_program!(device))
         .collect::<Result<_, _>>()
         .expect("Cannot create programs!");
-    let mut kern = EcFftKernel::<G1Affine>::create(programs).expect("Cannot initialize kernel!");
+    let mut kern = EcFftKernel::<G1Affine>::create(programs)
+        .expect("Cannot initialize kernel!");
 
     for log_d in 1..=16 {
         let d = 1 << log_d;
@@ -125,7 +129,8 @@ pub fn gpu_ec_fft_many_consistency() {
             &[log_d, log_d, log_d],
         )
         .expect("GPU FFTg3 failed!");
-        let gpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
+        let gpu_dur = now.elapsed().as_secs() * 1000
+            + now.elapsed().subsec_millis() as u64;
         println!("GPU FFTg3 took {}ms.", gpu_dur);
 
         now = Instant::now();
@@ -134,11 +139,30 @@ pub fn gpu_ec_fft_many_consistency() {
             serial_ec_fft::<G1Affine>(&mut v22_coeffs, &v22_omega, log_d);
             serial_ec_fft::<G1Affine>(&mut v23_coeffs, &v23_omega, log_d);
         } else {
-            parallel_ec_fft::<G1Affine>(&mut v21_coeffs, &worker, &v21_omega, log_d, log_threads);
-            parallel_ec_fft::<G1Affine>(&mut v22_coeffs, &worker, &v22_omega, log_d, log_threads);
-            parallel_ec_fft::<G1Affine>(&mut v23_coeffs, &worker, &v23_omega, log_d, log_threads);
+            parallel_ec_fft::<G1Affine>(
+                &mut v21_coeffs,
+                &worker,
+                &v21_omega,
+                log_d,
+                log_threads,
+            );
+            parallel_ec_fft::<G1Affine>(
+                &mut v22_coeffs,
+                &worker,
+                &v22_omega,
+                log_d,
+                log_threads,
+            );
+            parallel_ec_fft::<G1Affine>(
+                &mut v23_coeffs,
+                &worker,
+                &v23_omega,
+                log_d,
+                log_threads,
+            );
         }
-        let cpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
+        let cpu_dur = now.elapsed().as_secs() * 1000
+            + now.elapsed().subsec_millis() as u64;
         println!("CPU FFTg3 ({} cores) took {}ms.", 1 << log_threads, cpu_dur);
 
         println!("Speedup: x{}", cpu_dur as f32 / gpu_dur as f32);

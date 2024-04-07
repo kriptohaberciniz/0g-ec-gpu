@@ -1,24 +1,21 @@
 #![allow(missing_docs)]
-use std::io;
-use std::iter;
-use std::ops::AddAssign;
-use std::sync::Arc;
+use std::{io, iter, ops::AddAssign, sync::Arc};
 
+use ag_types::{GpuCurveAffine, PrimeFieldRepr};
 use ark_ec::Group;
-use ark_ff::BigInteger;
-use ark_ff::One;
-use ark_ff::PrimeField;
-use ark_ff::Zero;
-use ag_types::GpuCurveAffine;
-use ag_types::PrimeFieldRepr;
+use ark_ff::{BigInteger, One, PrimeField, Zero};
 use bitvec::prelude::{BitVec, Lsb0};
-use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
+use rayon::iter::{
+    IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
+};
 
 use crate::threadpool::{Waiter, Worker};
 use ec_gpu_program::EcError;
 
 /// An object that builds a source of bases.
-pub trait SourceBuilder<G: GpuCurveAffine>: Send + Sync + 'static + Clone {
+pub trait SourceBuilder<G: GpuCurveAffine>:
+    Send + Sync + 'static + Clone
+{
     type Source: Source<G>;
 
     #[allow(clippy::wrong_self_convention)]
@@ -29,7 +26,9 @@ pub trait SourceBuilder<G: GpuCurveAffine>: Send + Sync + 'static + Clone {
 /// A source of bases, like an iterator.
 pub trait Source<G: GpuCurveAffine> {
     /// Parses the element from the source. Fails if the point is at infinity.
-    fn add_assign_mixed(&mut self, to: &mut <G as GpuCurveAffine>::Curve) -> Result<(), EcError>;
+    fn add_assign_mixed(
+        &mut self, to: &mut <G as GpuCurveAffine>::Curve,
+    ) -> Result<(), EcError>;
 
     /// Skips `amt` elements from the source, avoiding deserialization.
     fn skip(&mut self, amt: usize) -> Result<(), EcError>;
@@ -38,17 +37,15 @@ pub trait Source<G: GpuCurveAffine> {
 impl<G: GpuCurveAffine> SourceBuilder<G> for (Arc<Vec<G>>, usize) {
     type Source = (Arc<Vec<G>>, usize);
 
-    fn new(self) -> (Arc<Vec<G>>, usize) {
-        (self.0.clone(), self.1)
-    }
+    fn new(self) -> (Arc<Vec<G>>, usize) { (self.0.clone(), self.1) }
 
-    fn get(self) -> (Arc<Vec<G>>, usize) {
-        (self.0.clone(), self.1)
-    }
+    fn get(self) -> (Arc<Vec<G>>, usize) { (self.0.clone(), self.1) }
 }
 
 impl<G: GpuCurveAffine> Source<G> for (Arc<Vec<G>>, usize) {
-    fn add_assign_mixed(&mut self, to: &mut <G as GpuCurveAffine>::Curve) -> Result<(), EcError> {
+    fn add_assign_mixed(
+        &mut self, to: &mut <G as GpuCurveAffine>::Curve,
+    ) -> Result<(), EcError> {
         if self.0.len() <= self.1 {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
@@ -91,30 +88,28 @@ pub trait QueryDensity: Sized {
 
     fn iter(self) -> Self::Iter;
     fn get_query_size(self) -> Option<usize>;
-    fn generate_exps<F: PrimeFieldRepr>(self, exponents: Arc<Vec<F::Repr>>) -> Arc<Vec<F::Repr>>;
+    fn generate_exps<F: PrimeFieldRepr>(
+        self, exponents: Arc<Vec<F::Repr>>,
+    ) -> Arc<Vec<F::Repr>>;
 }
 
 #[derive(Clone)]
 pub struct FullDensity;
 
 impl AsRef<FullDensity> for FullDensity {
-    fn as_ref(&self) -> &FullDensity {
-        self
-    }
+    fn as_ref(&self) -> &FullDensity { self }
 }
 
 impl<'a> QueryDensity for &'a FullDensity {
     type Iter = iter::Repeat<bool>;
 
-    fn iter(self) -> Self::Iter {
-        iter::repeat(true)
-    }
+    fn iter(self) -> Self::Iter { iter::repeat(true) }
 
-    fn get_query_size(self) -> Option<usize> {
-        None
-    }
+    fn get_query_size(self) -> Option<usize> { None }
 
-    fn generate_exps<F: PrimeFieldRepr>(self, exponents: Arc<Vec<F::Repr>>) -> Arc<Vec<F::Repr>> {
+    fn generate_exps<F: PrimeFieldRepr>(
+        self, exponents: Arc<Vec<F::Repr>>,
+    ) -> Arc<Vec<F::Repr>> {
         exponents
     }
 }
@@ -128,15 +123,13 @@ pub struct DensityTracker {
 impl<'a> QueryDensity for &'a DensityTracker {
     type Iter = bitvec::slice::BitValIter<'a, usize, Lsb0>;
 
-    fn iter(self) -> Self::Iter {
-        self.bv.iter().by_vals()
-    }
+    fn iter(self) -> Self::Iter { self.bv.iter().by_vals() }
 
-    fn get_query_size(self) -> Option<usize> {
-        Some(self.bv.len())
-    }
+    fn get_query_size(self) -> Option<usize> { Some(self.bv.len()) }
 
-    fn generate_exps<F: PrimeFieldRepr>(self, exponents: Arc<Vec<F::Repr>>) -> Arc<Vec<F::Repr>> {
+    fn generate_exps<F: PrimeFieldRepr>(
+        self, exponents: Arc<Vec<F::Repr>>,
+    ) -> Arc<Vec<F::Repr>> {
         let exps: Vec<_> = exponents
             .iter()
             .zip(self.bv.iter())
@@ -155,9 +148,7 @@ impl DensityTracker {
         }
     }
 
-    pub fn add_element(&mut self) {
-        self.bv.push(false);
-    }
+    pub fn add_element(&mut self) { self.bv.push(false); }
 
     pub fn inc(&mut self, idx: usize) {
         if !self.bv.get(idx).unwrap() {
@@ -166,12 +157,12 @@ impl DensityTracker {
         }
     }
 
-    pub fn get_total_density(&self) -> usize {
-        self.total_density
-    }
+    pub fn get_total_density(&self) -> usize { self.total_density }
 
-    /// Extend by concatenating `other`. If `is_input_density` is true, then we are tracking an input density,
-    /// and other may contain a redundant input for the `One` element. Coalesce those as needed and track the result.
+    /// Extend by concatenating `other`. If `is_input_density` is true, then we
+    /// are tracking an input density, and other may contain a redundant
+    /// input for the `One` element. Coalesce those as needed and track the
+    /// result.
     pub fn extend(&mut self, other: &Self, is_input_density: bool) {
         if other.bv.is_empty() {
             // Nothing to do if other is empty.
@@ -187,26 +178,30 @@ impl DensityTracker {
         }
 
         if is_input_density {
-            // Input densities need special handling to coalesce their first inputs.
+            // Input densities need special handling to coalesce their first
+            // inputs.
 
             if other.bv[0] {
                 // If other's first bit is set,
                 if self.bv[0] {
-                    // And own first bit is set, then decrement total density so the final sum doesn't overcount.
+                    // And own first bit is set, then decrement total density so
+                    // the final sum doesn't overcount.
                     self.total_density -= 1;
                 } else {
                     // Otherwise, set own first bit.
                     self.bv.set(0, true);
                 }
             }
-            // Now discard other's first bit, having accounted for it above, and extend self by remaining bits.
+            // Now discard other's first bit, having accounted for it above, and
+            // extend self by remaining bits.
             self.bv.extend(other.bv.iter().skip(1));
         } else {
             // Not an input density, just extend straightforwardly.
             self.bv.extend(other.bv.iter());
         }
 
-        // Since any needed adjustments to total densities have been made, just sum the totals and keep the sum.
+        // Since any needed adjustments to total densities have been made, just
+        // sum the totals and keep the sum.
         self.total_density += other.total_density;
     }
 }
@@ -228,16 +223,18 @@ fn shr(le_bytes: &mut [u8], mut n: u32) {
         n -= 8;
     }
 
-    // Starting at the most significant byte, shift the byte's `n` least significant bits into the
-    // `n` most signficant bits of the next byte.
+    // Starting at the most significant byte, shift the byte's `n` least
+    // significant bits into the `n` most signficant bits of the next byte.
     if n > 0 {
         let mut shift_in = 0;
         for byte in le_bytes.iter_mut().rev() {
             // Copy the byte's `n` least significant bits.
             let shift_out = *byte << (8 - n);
-            // Shift the byte by `n` bits; zeroing its `n` most significant bits.
+            // Shift the byte by `n` bits; zeroing its `n` most significant
+            // bits.
             *byte >>= n;
-            // Replace the `n` most significant bits with the bits shifted out of the previous byte.
+            // Replace the `n` most significant bits with the bits shifted out
+            // of the previous byte.
             *byte |= shift_in;
             shift_in = shift_out;
         }
@@ -245,10 +242,8 @@ fn shr(le_bytes: &mut [u8], mut n: u32) {
 }
 
 fn multiexp_inner<Q, D, G, S>(
-    bases: S,
-    density_map: D,
-    exponents: Arc<Vec<<G::Scalar as PrimeFieldRepr>::Repr>>,
-    c: u32,
+    bases: S, density_map: D,
+    exponents: Arc<Vec<<G::Scalar as PrimeFieldRepr>::Repr>>, c: u32,
 ) -> Result<G::Curve, EcError>
 where
     for<'a> &'a Q: QueryDensity,
@@ -259,7 +254,9 @@ where
     // Perform this region of the multiexp
     let this = move |bases: S,
                      density_map: D,
-                     exponents: Arc<Vec<<G::Scalar as PrimeFieldRepr>::Repr>>,
+                     exponents: Arc<
+        Vec<<G::Scalar as PrimeFieldRepr>::Repr>,
+    >,
                      skip: u32|
           -> Result<_, EcError> {
         // Accumulate the result
@@ -269,7 +266,8 @@ where
         let mut bases = bases.new();
 
         // Create space for the buckets
-        let mut buckets = vec![<G as GpuCurveAffine>::Curve::zero(); (1 << c) - 1];
+        let mut buckets =
+            vec![<G as GpuCurveAffine>::Curve::zero(); (1 << c) - 1];
 
         let zero = G::Scalar::zero().to_repr();
         let one = G::Scalar::one().to_repr();
@@ -278,7 +276,8 @@ where
         let handle_trivial = skip == 0;
 
         // Sort the bases into buckets
-        for (&exp, density) in exponents.iter().zip(density_map.as_ref().iter()) {
+        for (&exp, density) in exponents.iter().zip(density_map.as_ref().iter())
+        {
             if density {
                 if exp == zero {
                     bases.skip(1)?;
@@ -295,7 +294,9 @@ where
                     let exp = exp.as_ref()[0] % (1 << c);
 
                     if exp != 0 {
-                        bases.add_assign_mixed(&mut buckets[(exp - 1) as usize])?;
+                        bases.add_assign_mixed(
+                            &mut buckets[(exp - 1) as usize],
+                        )?;
                     } else {
                         bases.skip(1)?;
                     }
@@ -319,28 +320,28 @@ where
     let parts = (0..<G::Scalar as PrimeField>::MODULUS_BIT_SIZE)
         .into_par_iter()
         .step_by(c as usize)
-        .map(|skip| this(bases.clone(), density_map.clone(), exponents.clone(), skip))
+        .map(|skip| {
+            this(bases.clone(), density_map.clone(), exponents.clone(), skip)
+        })
         .collect::<Vec<Result<_, _>>>();
 
-    parts
-        .into_iter()
-        .rev()
-        .try_fold(<G as GpuCurveAffine>::Curve::zero(), |mut acc, part| {
+    parts.into_iter().rev().try_fold(
+        <G as GpuCurveAffine>::Curve::zero(),
+        |mut acc, part| {
             for _ in 0..c {
                 acc = acc.double();
             }
 
             acc.add_assign(&part?);
             Ok(acc)
-        })
+        },
+    )
 }
 
 /// Perform multi-exponentiation. The caller is responsible for ensuring the
 /// query size is the same as the number of exponents.
 pub fn multiexp_cpu<'b, Q, D, G, S>(
-    pool: &Worker,
-    bases: S,
-    density_map: D,
+    pool: &Worker, bases: S, density_map: D,
     exponents: Arc<Vec<<G::Scalar as PrimeFieldRepr>::Repr>>,
 ) -> Waiter<Result<<G as GpuCurveAffine>::Curve, EcError>>
 where
@@ -378,8 +379,7 @@ mod tests {
     #[test]
     fn test_with_bls12() {
         fn naive_multiexp<G: GpuCurveAffine>(
-            bases: Arc<Vec<G>>,
-            exponents: &[G::Scalar],
+            bases: Arc<Vec<G>>, exponents: &[G::Scalar],
         ) -> G::Curve {
             assert_eq!(bases.len(), exponents.len());
 
@@ -395,7 +395,8 @@ mod tests {
         const SAMPLES: usize = 1 << 14;
 
         let rng = &mut rand::thread_rng();
-        let v: Vec<Scalar> = (0..SAMPLES).map(|_| Scalar::rand(&mut *rng)).collect();
+        let v: Vec<Scalar> =
+            (0..SAMPLES).map(|_| Scalar::rand(&mut *rng)).collect();
         let g = Arc::new(
             (0..SAMPLES)
                 .map(|_| G1Affine::rand(&mut *rng))
@@ -420,8 +421,8 @@ mod tests {
     #[test]
     fn test_extend_density_regular() {
         let mut rng = XorShiftRng::from_seed([
-            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
-            0xbc, 0xe5,
+            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37,
+            0x32, 0x54, 0x06, 0xbc, 0xe5,
         ]);
 
         for k in &[2, 4, 8] {
@@ -429,7 +430,8 @@ mod tests {
                 let count: usize = k * j;
 
                 let mut tracker_full = DensityTracker::new();
-                let mut partial_trackers: Vec<DensityTracker> = Vec::with_capacity(count / k);
+                let mut partial_trackers: Vec<DensityTracker> =
+                    Vec::with_capacity(count / k);
                 for i in 0..count {
                     if i % k == 0 {
                         partial_trackers.push(DensityTracker::new());
@@ -442,7 +444,8 @@ mod tests {
                     }
 
                     if !partial_trackers[index].bv.is_empty() {
-                        let idx = rng.gen_range(0..partial_trackers[index].bv.len());
+                        let idx =
+                            rng.gen_range(0..partial_trackers[index].bv.len());
                         let offset: usize = partial_trackers
                             .iter()
                             .take(index)
@@ -465,8 +468,8 @@ mod tests {
     #[test]
     fn test_extend_density_input() {
         let mut rng = XorShiftRng::from_seed([
-            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
-            0xbc, 0xe5,
+            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37,
+            0x32, 0x54, 0x06, 0xbc, 0xe5,
         ]);
         let trials = 10;
         let max_bits = 10;

@@ -1,11 +1,10 @@
 use ark_ff::PrimeField;
-pub use chosen_ark_suite::Fq as Base;
-pub use chosen_ark_suite::Fr as Scalar;
-pub use chosen_ark_suite::G1Affine;
-pub use chosen_ark_suite::G1Projective as Curve;
+pub use chosen_ark_suite::{
+    Fq as Base, Fr as Scalar, G1Affine, G1Projective as Curve,
+};
 
 macro_rules! impl_kernel_wrapper {
-    ($name: ident) => {
+    ($name:ident) => {
         #[cfg(feature = "cuda")]
         impl rust_gpu_tools::cuda::KernelArgument for $name {
             fn as_c_void(&self) -> *mut std::ffi::c_void {

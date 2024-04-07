@@ -1,13 +1,14 @@
-use std::cmp;
-use std::sync::{Arc, RwLock};
+use std::{
+    cmp,
+    sync::{Arc, RwLock},
+};
 
-use ark_ff::Field;
 use ag_types::{GpuCurveAffine, GpuName};
+use ark_ff::Field;
 use log::{error, info};
 use rust_gpu_tools::{program_closures, LocalBuffer, Program};
 
-use crate::pow_vartime;
-use crate::threadpool::THREAD_POOL;
+use crate::{pow_vartime, threadpool::THREAD_POOL};
 use ec_gpu_program::{EcError, EcResult};
 
 const LOG2_MAX_ELEMENTS: usize = 32; // At most 2^32 elements is supported.
@@ -20,21 +21,21 @@ where
     G::Scalar: Field + GpuName,
 {
     program: Program,
-    /// An optional function which will be called at places where it is possible to abort the FFT
-    /// calculations. If it returns true, the calculation will be aborted with an
-    /// [`EcError::Aborted`].
+    /// An optional function which will be called at places where it is
+    /// possible to abort the FFT calculations. If it returns true, the
+    /// calculation will be aborted with an [`EcError::Aborted`].
     maybe_abort: Option<&'a (dyn Fn() -> bool + Send + Sync)>,
     _phantom: std::marker::PhantomData<G::Scalar>,
 }
 
 impl<'a, G: GpuCurveAffine> SingleEcFftKernel<'a, G>
-where
-    G::Scalar: Field + GpuName,
+where G::Scalar: Field + GpuName
 {
     /// Create a new FFT instance for the given device.
     ///
-    /// The `maybe_abort` function is called when it is possible to abort the computation, without
-    /// leaving the GPU in a weird state. If that function returns `true`, execution is aborted.
+    /// The `maybe_abort` function is called when it is possible to abort the
+    /// computation, without leaving the GPU in a weird state. If that
+    /// function returns `true`, execution is aborted.
     pub fn create(
         program: Program,
         maybe_abort: Option<&'a (dyn Fn() -> bool + Send + Sync)>,
@@ -50,23 +51,26 @@ where
     /// * `omega` - Special value `omega` is used for FFT over finite-fields
     /// * `log_n` - Specifies log2 of number of elements
     pub fn radix_ec_fft(
-        &mut self,
-        input: &mut [G::Curve],
-        omega: &G::Scalar,
-        log_n: u32,
+        &mut self, input: &mut [G::Curve], omega: &G::Scalar, log_n: u32,
     ) -> EcResult<()> {
-        let closures = program_closures!(|program, input: &mut [G::Curve]| -> EcResult<()> {
+        let closures = program_closures!(|program,
+                                          input: &mut [G::Curve]|
+         -> EcResult<()> {
             let n = 1 << log_n;
-            // All usages are safe as the buffers are initialized from either the host or the GPU
-            // before they are read.
-            let mut src_buffer = unsafe { program.create_buffer::<G::Curve>(n)? };
-            let mut dst_buffer = unsafe { program.create_buffer::<G::Curve>(n)? };
-            // The precalculated values pq` and `omegas` are valid for radix degrees up to `max_deg`
+            // All usages are safe as the buffers are initialized from either
+            // the host or the GPU before they are read.
+            let mut src_buffer =
+                unsafe { program.create_buffer::<G::Curve>(n)? };
+            let mut dst_buffer =
+                unsafe { program.create_buffer::<G::Curve>(n)? };
+            // The precalculated values pq` and `omegas` are valid for radix
+            // degrees up to `max_deg`
             let max_deg = cmp::min(MAX_LOG2_RADIX, log_n);
 
             // Precalculate:
-            // [omega^(0/(2^(deg-1))), omega^(1/(2^(deg-1))), ..., omega^((2^(deg-1)-1)/(2^(deg-1)))]
-            // let mut pq = vec![G::Scalar::ZERO; 1 << max_deg >> 1];
+            // [omega^(0/(2^(deg-1))), omega^(1/(2^(deg-1))), ...,
+            // omega^((2^(deg-1)-1)/(2^(deg-1)))] let mut pq =
+            // vec![G::Scalar::ZERO; 1 << max_deg >> 1];
             let twiddle = pow_vartime(omega, [(n >> max_deg) as u64]);
             let pq = vec![twiddle];
             // pq[0] = G::Scalar::ONE;
@@ -79,7 +83,8 @@ where
             // }
             let pq_buffer = program.create_buffer_from_slice(&pq)?;
 
-            // Precalculate [omega, omega^2, omega^4, omega^8, ..., omega^(2^31)]
+            // Precalculate [omega, omega^2, omega^4, omega^8, ...,
+            // omega^(2^31)]
             let mut omegas = vec![G::Scalar::ZERO; 32];
             omegas[0] = *omega;
             for i in 1..LOG2_MAX_ELEMENTS {
@@ -105,8 +110,12 @@ where
 
                 let virtual_local_work_size = 1 << (deg - 1);
 
-                // The algorithm may require a small local_network_size. However, too small local_network_size will undermine the performance. So we allocate a larger local_network_size, but translate the global parameter before execution.
-                let physical_local_work_size = if virtual_local_work_size >= 32 {
+                // The algorithm may require a small local_network_size.
+                // However, too small local_network_size will undermine the
+                // performance. So we allocate a larger local_network_size, but
+                // translate the global parameter before execution.
+                let physical_local_work_size = if virtual_local_work_size >= 32
+                {
                     virtual_local_work_size
                 } else if n <= 64 {
                     virtual_local_work_size
@@ -121,7 +130,8 @@ where
                     global_work_size as usize,
                     physical_local_work_size as usize,
                 )?;
-                // dbg!(n, deg, max_deg, log_p, global_work_size, physical_local_work_size, virtual_local_work_size);
+                // dbg!(n, deg, max_deg, log_p, global_work_size,
+                // physical_local_work_size, virtual_local_work_size);
                 kernel
                     .arg(&src_buffer)
                     .arg(&dst_buffer)
@@ -171,8 +181,9 @@ where
 
     /// Create new kernels, one for each given device, with early abort hook.
     ///
-    /// The `maybe_abort` function is called when it is possible to abort the computation, without
-    /// leaving the GPU in a weird state. If that function returns `true`, execution is aborted.
+    /// The `maybe_abort` function is called when it is possible to abort the
+    /// computation, without leaving the GPU in a weird state. If that
+    /// function returns `true`, execution is aborted.
     pub fn create_with_abort(
         programs: Vec<Program>,
         maybe_abort: &'a (dyn Fn() -> bool + Send + Sync),
@@ -188,7 +199,8 @@ where
             .into_iter()
             .filter_map(|program| {
                 let device_name = program.device_name().to_string();
-                let kernel = SingleEcFftKernel::<G>::create(program, maybe_abort);
+                let kernel =
+                    SingleEcFftKernel::<G>::create(program, maybe_abort);
                 if let Err(ref e) = kernel {
                     error!(
                         "Cannot initialize kernel for device '{}'! Error: {}",
@@ -216,10 +228,7 @@ where
     ///
     /// Uses the first available GPU.
     pub fn radix_ec_fft(
-        &mut self,
-        input: &mut [G::Curve],
-        omega: &G::Scalar,
-        log_n: u32,
+        &mut self, input: &mut [G::Curve], omega: &G::Scalar, log_n: u32,
     ) -> EcResult<()> {
         self.kernels[0].radix_ec_fft(input, omega, log_n)
     }
@@ -230,9 +239,7 @@ where
     ///
     /// Uses all available GPUs to distribute the work.
     pub fn radix_ec_fft_many(
-        &mut self,
-        inputs: &mut [&mut [G::Curve]],
-        omegas: &[G::Scalar],
+        &mut self, inputs: &mut [&mut [G::Curve]], omegas: &[G::Scalar],
         log_ns: &[u32],
     ) -> EcResult<()> {
         let n = inputs.len();
@@ -257,7 +264,9 @@ where
                             break;
                         }
 
-                        if let Err(err) = kern.radix_ec_fft(input, omega, *log_n) {
+                        if let Err(err) =
+                            kern.radix_ec_fft(input, omega, *log_n)
+                        {
                             *result.write().unwrap() = Err(err);
                             break;
                         }
