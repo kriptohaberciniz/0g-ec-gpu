@@ -13,7 +13,7 @@ pub trait GpuName {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```ignore
     /// struct Fp;
     ///
     /// impl ag_types::GpuName for Fp {

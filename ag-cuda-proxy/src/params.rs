@@ -65,15 +65,13 @@ impl<'a, T> Param<'a, T> {
 
         let size = self.size();
 
-        let mut buffer =
-            unsafe { DeviceBuffer::<u8>::uninitialized(size)? };
+        let mut buffer = unsafe { DeviceBuffer::<u8>::uninitialized(size)? };
 
         if let Some(pointer) = self.input_pointer() {
             let bytes = unsafe {
                 std::slice::from_raw_parts(pointer as *const u8, size)
             };
             unsafe { buffer.async_copy_from(bytes, stream)? };
-            stream.synchronize()?;
         }
 
         Ok(Some(buffer))
@@ -97,7 +95,6 @@ impl<'a, T> ParamIO for (Param<'a, T>, Option<DeviceBuffer<u8>>) {
             return Ok(());
         };
 
-
         if let Some(pointer) = self.0.output_pointer() {
             dbg!("sync back");
 
@@ -108,7 +105,7 @@ impl<'a, T> ParamIO for (Param<'a, T>, Option<DeviceBuffer<u8>>) {
                 )
             };
             unsafe { buffer.async_copy_to(bytes, stream)? };
-            stream.synchronize()?;
+            // stream.synchronize()?;
         }
 
         Ok(())
@@ -123,8 +120,7 @@ pub struct DeviceParam<'a, T> {
 impl<'a, T> DeviceParam<'a, T> {
     pub fn new(val: &'a mut [T]) -> CudaResult<Self> {
         let size = val.len() * std::mem::size_of::<T>();
-        let buffer =
-            unsafe { DeviceBuffer::<u8>::uninitialized(size)? };
+        let buffer = unsafe { DeviceBuffer::<u8>::uninitialized(size)? };
 
         Ok(Self {
             host_mem: val,
@@ -137,7 +133,10 @@ impl<'a, T> DeviceParam<'a, T> {
         let size = self.host_mem.len() * std::mem::size_of::<T>();
 
         let bytes = unsafe {
-            std::slice::from_raw_parts(self.host_mem.as_ptr() as *const u8, size)
+            std::slice::from_raw_parts(
+                self.host_mem.as_ptr() as *const u8,
+                size,
+            )
         };
         unsafe { self.device_mem.async_copy_from(bytes, stream)? };
         stream.synchronize()?;
@@ -171,21 +170,16 @@ impl<'a, 'b, T> ParamIO for &'b DeviceParam<'a, T> {
         (&self.device_mem) as *const _ as *mut c_void
     }
 
-    fn after_call(&mut self, _stream: &Stream) -> CudaResult<()> {
-        Ok(())
-    }
+    fn after_call(&mut self, _stream: &Stream) -> CudaResult<()> { Ok(()) }
 }
-
 
 pub(crate) struct NullPointer;
 
 impl<'a> ParamIO for NullPointer {
     fn param_pointer(&self) -> *mut c_void {
         const NULL: &'static [u8; 0] = &[];
-       (&NULL) as *const _ as *mut c_void
+        (&NULL) as *const _ as *mut c_void
     }
 
-    fn after_call(&mut self, _stream: &Stream) -> CudaResult<()> {
-        Ok(())
-    }
+    fn after_call(&mut self, _stream: &Stream) -> CudaResult<()> { Ok(()) }
 }

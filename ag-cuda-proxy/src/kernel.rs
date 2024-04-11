@@ -2,11 +2,10 @@ use crate::params::{DeviceParam, NullPointer};
 
 use super::params::{Param, ParamIO};
 
-use std::ffi::c_void;
+use std::ffi::{c_void, CString};
 
 use rustacuda::{
-    context::ContextStack, error::CudaResult, function::Function,
-    stream::Stream,
+    error::CudaResult, function::Function, module::Module, stream::Stream,
 };
 
 #[cfg(feature = "timer")]
@@ -20,49 +19,64 @@ pub struct KernelConfig {
 }
 
 pub struct Kernel<'a> {
-    function: Function<'a>,
+    module: &'a Module,
     stream: Stream,
 }
 
 impl<'a> Kernel<'a> {
-    pub fn new(function: Function<'a>, stream: Stream) -> Self {
-        Self { function, stream }
+    pub fn new(module: &'a Module, stream: Stream) -> Self {
+        Self { module, stream }
     }
 
-    pub fn with_args<'b>(self) -> KernelWithArgs<'a, 'b> {
-        KernelWithArgs {
-            k: self,
-            args: Vec::new(),
-            #[cfg(feature = "timer")]
-            instant: Instant::now(),
-        }
-    }
-
-    pub fn sync_to_device<'b, T>(&self, param: &mut DeviceParam<'_, T>) -> CudaResult<()> {
-        param.to_device(&self.stream)
-    }
-
-    pub fn sync_to_host<'b, T>(&self, param: &mut DeviceParam<'_, T>) -> CudaResult<()> {
-        param.to_host(&self.stream)
+    pub fn func<'b>(self, name: &str) -> CudaResult<KernelTask<'a, 'b>> {
+        KernelTask::new(self, name)
     }
 }
 
-pub struct KernelWithArgs<'a, 'b> {
+pub struct KernelTask<'a, 'b> {
     k: Kernel<'a>,
+    function: Function<'a>,
     args: Vec<Box<dyn ParamIO + 'b>>,
     #[cfg(feature = "timer")]
     instant: Instant,
 }
 
-impl<'a, 'b> KernelWithArgs<'a, 'b> {
+pub struct PendingTask<'a, 'b>(KernelTask<'a, 'b>);
+
+impl<'a, 'b> KernelTask<'a, 'b> {
+    pub fn new(kernel: Kernel<'a>, name: &str) -> CudaResult<Self> {
+        #[cfg(feature = "timer")]
+        let instant = Instant::now();
+
+        let function_name =
+            CString::new(name).expect("Kernel name must not contain nul bytes");
+        let function = kernel.module.get_function(&function_name)?;
+
+        #[cfg(feature = "timer")]
+        println!(
+            "[{:?}] Elapsed {:.3} us (get function)",
+            std::thread::current().id(),
+            instant.elapsed().as_nanos() as f64 / 1000.0,
+        );
+
+        Ok(KernelTask {
+            k: kernel,
+            function,
+            args: Vec::new(),
+            #[cfg(feature = "timer")]
+            instant,
+        })
+    }
+
     #[inline]
     #[allow(unused_variables)]
     pub fn elapsed(&self, note: &str) {
         #[cfg(feature = "timer")]
         {
             println!(
-                "Elapsed {} us ({})",
-                self.instant.elapsed().as_micros(),
+                "[{:?}] Elapsed {:.3} us ({})",
+                std::thread::current().id(),
+                self.instant.elapsed().as_nanos() as f64 / 1000.0,
                 note
             );
         }
@@ -103,63 +117,63 @@ impl<'a, 'b> KernelWithArgs<'a, 'b> {
         Ok(self)
     }
 
-    pub fn dev_arg<T>(mut self, output: &'b DeviceParam<'_, T>) -> CudaResult<Self> {
-        self.elapsed("device param");
+    pub fn dev_arg<T>(
+        mut self, output: &'b DeviceParam<'_, T>,
+    ) -> CudaResult<Self> {
         self.args.push(Box::new(output));
+        self.elapsed("device param");
         Ok(self)
     }
 
     pub fn empty(mut self) -> CudaResult<Self> {
-        self.elapsed("empty param");
         self.args.push(Box::new(NullPointer));
+        self.elapsed("empty param");
         Ok(self)
     }
 
     fn receive_param<T>(&mut self, arg: Param<'b, T>) -> CudaResult<()> {
         let b = arg.before_call(&self.k.stream)?;
-        self.elapsed("param");
         self.args.push(Box::new((arg, b)));
+        self.elapsed("param");
         Ok(())
     }
 
-    fn run_inner(&mut self, config: KernelConfig) -> CudaResult<()> {
+    pub fn launch(
+        self, config: KernelConfig,
+    ) -> CudaResult<PendingTask<'a, 'b>> {
         let args: Vec<*mut c_void> =
             self.args.iter().map(|x| x.param_pointer()).collect();
         self.elapsed("before launch");
         unsafe {
-            self.k
-                .stream
-                .launch(
-                    &self.k.function,
-                    config.global_work_size as u32,
-                    config.local_work_size as u32,
-                    config.shared_mem as u32,
-                    &args,
-                )
-                ?
+            self.k.stream.launch(
+                &self.function,
+                config.global_work_size as u32,
+                config.local_work_size as u32,
+                config.shared_mem as u32,
+                &args,
+            )?
         }
         self.elapsed("after launch");
-        self.k.stream.synchronize()?;
-        self.elapsed("exec done");
-        Ok(())
-    }
-
-    pub fn run(mut self, config: KernelConfig) -> CudaResult<Kernel<'a>> {
-        self.run_inner(config)?;
-        for mut param in self.args.drain(..) {
-            param.after_call(&self.k.stream)?;
-            #[cfg(feature = "timer")]
-            {
-                println!(
-                    "Elapsed {} us (back)",
-                    self.instant.elapsed().as_micros()
-                );
-            }
-        }
-        Ok(self.k)
+        Ok(PendingTask(self))
     }
 }
 
-impl<'a> Drop for Kernel<'a> {
-    fn drop(&mut self) { let _ = ContextStack::pop(); }
+impl<'a, 'b> PendingTask<'a, 'b> {
+    pub fn complete(self) -> CudaResult<Kernel<'a>> {
+        let mut kernel = self.0;
+        kernel.k.stream.synchronize()?;
+        kernel.elapsed("exec done");
+        for mut param in kernel.args.drain(..) {
+            param.after_call(&kernel.k.stream)?;
+            #[cfg(feature = "timer")]
+            {
+                println!(
+                    "[{:?}] Elapsed {} us (back)",
+                    std::thread::current().id(),
+                    kernel.instant.elapsed().as_nanos() as f64 / 1000.0,
+                );
+            }
+        }
+        Ok(kernel.k)
+    }
 }

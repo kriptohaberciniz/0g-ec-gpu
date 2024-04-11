@@ -5,7 +5,7 @@ members = [
   "ec-gpu-program",
   "ec-gpu-proxy",
   "ag-cuda-proxy",
-  "ag-cuda-ec",
+  "ag-cuda-ec", "ag-cuda-workspace-macro",
 ]
 resolver = "2"
 
@@ -14,6 +14,7 @@ ag-types = { path = "./ag-types" }
 ag-build = { path = "./ag-build" }
 ag-cuda-proxy = { path = "./ag-cuda-proxy" }
 ec-gpu-program = { path = "./ec-gpu-program" }
+ag-cuda-workspace-macro  = { path = "./ag-cuda-workspace-macro"}
 
 rust-gpu-tools = { version = "0.7.0", default-features = false }
 ark-ff = "0.4.0"

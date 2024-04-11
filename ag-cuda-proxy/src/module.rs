@@ -1,45 +1,63 @@
-use super::kernel::Kernel;
+use crate::{
+    context::CudaContext, ctx_stack_guard::WorkspaceContextGuard, cuda_init,
+    kernel::Kernel,
+};
 
 use rustacuda::{
-    context::{ContextStack, CurrentContext, UnownedContext},
+    context::{Context, ContextFlags, ContextStack},
+    device::Device,
     error::CudaResult,
     module::Module,
     stream::{Stream, StreamFlags},
 };
-use std::{ffi::CString, sync::Arc};
 
-pub struct PreparedModule {
-    context: Arc<UnownedContext>,
+pub struct CudaWorkspace {
+    // TODO: support multiple module
     module: Module,
+    context: CudaContext,
 }
 
-// TODO: re-check thread safety
-unsafe impl Send for PreparedModule {}
-unsafe impl Sync for PreparedModule {}
+unsafe impl Send for CudaWorkspace {}
+unsafe impl Sync for CudaWorkspace {}
 
-impl PreparedModule {
-    pub fn from_bytes(
-        context: &Arc<UnownedContext>, bytes: &[u8],
-    ) -> CudaResult<Self> {
-        CurrentContext::set_current(&**context)?;
+impl CudaWorkspace {
+    pub fn from_bytes(bytes: &[u8]) -> CudaResult<Self> {
+        cuda_init();
+
+        let device = Device::get_device(0)?;
+
+        // Create a context associated to this device
+        let ctx = Context::create_and_push(
+            ContextFlags::MAP_HOST | ContextFlags::SCHED_AUTO,
+            device,
+        )?;
+
         let maybe_module = Module::load_from_bytes(bytes);
         ContextStack::pop().expect("Cannot remove context.");
 
         Ok(Self {
-            context: context.clone(),
+            context: CudaContext::new(ctx),
             module: maybe_module?,
         })
     }
 
-    pub fn create_kernel(&self, name: &str) -> CudaResult<Kernel> {
-        let function_name =
-            CString::new(name).expect("Kernel name must not contain nul bytes");
-        let function = self.module.get_function(&function_name)?;
+    pub fn activate<'a>(&'a self) -> CudaResult<ActiveWorkspace<'a>> {
+        let guard = WorkspaceContextGuard::new(&self.context)?;
+        Ok(ActiveWorkspace(&self, guard))
+    }
+}
 
-        // TODO: check maintenance of context in cuda.
-        CurrentContext::set_current(&*self.context)?;
-        let maybe_stream = Stream::new(StreamFlags::NON_BLOCKING, None);
-        let stream = maybe_stream?;
-        Ok(Kernel::new(function, stream))
+pub struct ActiveWorkspace<'a>(
+    &'a CudaWorkspace,
+    #[allow(dead_code)] WorkspaceContextGuard<'a>,
+);
+
+impl<'a> ActiveWorkspace<'a> {
+    pub fn create_kernel(&self) -> CudaResult<Kernel<'a>> {
+        Ok(Kernel::new(&self.0.module, self.stream()?))
+    }
+
+    pub fn stream(&self) -> CudaResult<Stream> {
+        Stream::new(StreamFlags::NON_BLOCKING, None)
     }
 }
