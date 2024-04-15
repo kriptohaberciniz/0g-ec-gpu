@@ -15,6 +15,7 @@ ag-build = { path = "./ag-build" }
 ag-cuda-proxy = { path = "./ag-cuda-proxy" }
 ec-gpu-program = { path = "./ec-gpu-program" }
 ag-cuda-workspace-macro  = { path = "./ag-cuda-workspace-macro"}
+ec-gpu-proxy = {path = "./ec-gpu-proxy" }
 
 rust-gpu-tools = { version = "0.7.0", default-features = false }
 ark-ff = "0.4.0"

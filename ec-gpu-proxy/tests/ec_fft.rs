@@ -3,7 +3,7 @@
 use std::time::Instant;
 
 use ag_build::generate;
-use ark_bn254::{Fr, G1Affine};
+use ark_bls12_381::{Fr, G1Affine};
 use ark_ec::AffineRepr;
 use ark_ff::FftField;
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};

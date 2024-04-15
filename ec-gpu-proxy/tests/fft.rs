@@ -3,7 +3,7 @@
 use std::time::Instant;
 
 use ag_build::{self, generate};
-use ark_bn254::Fr;
+use ark_bls12_381::Fr;
 use ark_ff::FftField;
 use ark_std::UniformRand;
 use ec_gpu_proxy::{
