@@ -18,30 +18,24 @@ KERNEL void POINT_multiexp(
     uint window_size,
     uint num_windows_log2) 
 {
-  POINT_jacobian* buckets = (POINT_jacobian*)cuda_shared;
 
   // We have `num_windows` * `num_groups` threads per multiexp.
   const uint gid = GET_GLOBAL_ID();
   if(gid >= num_windows * num_groups) return;
 
-  POINT_jacobian local_bucket = POINT_ZERO;
+  POINT_jacobian* buckets = (POINT_jacobian*)cuda_shared;
 
-  // Num of elements in each group. Round the number up (ceil).
-  const uint len = (n + num_groups - 1) / num_groups;
-
-  // This thread runs the multiexp algorithm on elements from `nstart` to `nend`
-  // on the window [`bits`, `bits` + `w`)
+  const uint len = n / num_groups;
   const uint task_id = gid / num_windows;
   const uint nstart = len * task_id;
   const uint nend = min(nstart + len, n);
-  const uint bits = (gid % num_windows) * window_size;
+  const uint bits = gid % num_windows;
   
+  buckets[bits] = POINT_ZERO;
   for(uint i = nstart; i < nend; i++) {
     uint ind = SCALAR_get_bit(exps[i], bits);
-    if(ind) local_bucket = POINT_add_mixed(local_bucket, bases[i]);
+    if(ind) buckets[bits] = POINT_add_mixed(buckets[bits], bases[i]);
   }
-
-  buckets[bits] = local_bucket;
 
   BARRIER_LOCAL();
 
@@ -55,7 +49,7 @@ KERNEL void POINT_multiexp(
   //  results[task_id] = res;
   //}
 
-  // 280 ms
+  // 280 ms = 240 + 40
   uint step_2 = 1;
   uint step_2_new = 2;
   POINT_jacobian res = POINT_ZERO;
