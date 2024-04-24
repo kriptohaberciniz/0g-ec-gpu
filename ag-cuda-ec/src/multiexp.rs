@@ -4,7 +4,7 @@ use ag_types::{GpuName, GpuRepr, PrimeFieldRepr};
 use ark_bls12_381::{Fr as Scalar, G1Affine as Affine, G1Projective as Curve};
 use ark_ec::{CurveGroup, Group};
 use ark_ff::{Field, PrimeField};
-use ark_std::Zero;
+use ark_std::{log2, Zero};
 use rustacuda::error::CudaResult;
 use std::time::Instant;
 use std::ops::AddAssign;
@@ -87,4 +87,63 @@ pub fn multiexp_gpu(
     }
 
     Ok(acc.into_affine())
+}
+
+#[auto_workspace]
+pub fn multiple_multiexp(
+    workspace: &ActiveWorkspace, bases: &[<Affine as GpuRepr>::Repr], exponents: &[<Scalar as PrimeFieldRepr>::Repr], num_groups: usize
+) -> CudaResult<Vec<Curve>> {
+    let window_size = 1usize;
+    let num_windows = (256 + window_size - 1) / window_size;
+    let work_units = num_windows * num_groups; // TODO device.work_units
+    let num_terms = bases.len();
+    let bucket_len = (1 << window_size) - 1;
+    let num_windows_log2 = log2(num_windows);
+    assert_eq!(1 << num_windows_log2, num_windows);
+    
+
+    let mut output = vec![Curve::zero(); num_groups];
+    
+    // dbg!(bases.len(), bucket.len(), output.len(), exponents.len(), num_terms, num_groups, num_windows, window_size);
+
+    let mut output_gpu = DeviceParam::new(&mut output)?;
+
+    let stream = workspace.stream()?;
+    output_gpu.to_device(&stream)?;
+    
+    let mut kernel = workspace.create_kernel()?;
+
+    let physical_local_work_size = num_windows; // most efficient: 32 - 128
+    let global_work_size = work_units / physical_local_work_size;
+
+    let config = KernelConfig {
+        global_work_size,
+        local_work_size: physical_local_work_size,
+        shared_mem: std::mem::size_of::<Curve>() * physical_local_work_size * bucket_len as usize,
+    };
+
+    let kernel_name = format!("{}_multiexp", Affine::name());
+
+    let now = Instant::now();
+
+    kernel
+        .func(&kernel_name)?
+        .in_ref_slice(bases)?
+        .dev_arg(&output_gpu)?
+        .in_ref_slice(exponents)?
+        .val(num_terms as u32)?
+        .val(num_groups as u32)?
+        .val(num_windows as u32)?
+        .val(window_size as u32)?
+        .val(num_windows_log2 as u32)?
+        .launch(config)?
+        .complete()?;
+    
+    let dur = now.elapsed().as_secs() * 1000
+        + now.elapsed().subsec_millis() as u64;
+    println!("GPU (inner) took {}ms.", dur);
+
+    output_gpu.to_host(&stream)?;
+
+    Ok(output)
 }

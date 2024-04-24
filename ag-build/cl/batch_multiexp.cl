@@ -15,8 +15,7 @@ KERNEL void POINT_multiexp(
     uint n,
     uint num_groups,
     uint num_windows,
-    uint window_size,
-    uint num_windows_log2) 
+    uint window_size) 
 {
   POINT_jacobian* buckets = (POINT_jacobian*)cuda_shared;
 
@@ -45,33 +44,12 @@ KERNEL void POINT_multiexp(
 
   BARRIER_LOCAL();
 
-  // 365 ms
-  //if (bits == 0) {
-  //  POINT_jacobian res = buckets[0]; 
-  //  for(uint i = 1; i < num_windows; i++) {
-  //    res = POINT_double(res); // 255
-  //    res = POINT_add(res, buckets[i]); // 255
-  //  }
-  //  results[task_id] = res;
-  //}
-
-  // 280 ms
-  uint step_2 = 1;
-  uint step_2_new = 2;
-  POINT_jacobian res = POINT_ZERO;
-  for(uint step = 0; step < num_windows_log2; step++) {
-    if (bits % step_2_new == 0) {
-      res = buckets[bits];
-      for(uint i = 0; i < step_2; i++) {
-        res = POINT_double(res); // 1, 2, ..., 128 -> sum -> 255
-      }
-      buckets[bits] = POINT_add(res, buckets[bits + step_2]); // 8
-    }
-    step_2 = step_2_new;
-    step_2_new <<= 1;
-    BARRIER_LOCAL();
-  }
   if (bits == 0) {
-    results[task_id] = buckets[0];
+    POINT_jacobian res = buckets[0]; 
+    for(uint i = 1; i < num_windows; i++) {
+      res = POINT_double(res);
+      res = POINT_add(res, buckets[i]);
+    }
+    results[task_id] = res;
   }
 }
