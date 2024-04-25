@@ -93,7 +93,7 @@ pub fn multiexp_gpu(
 pub fn multiple_multiexp(
     workspace: &ActiveWorkspace, bases: &[<Affine as GpuRepr>::Repr], exponents: &[<Scalar as PrimeFieldRepr>::Repr], num_groups: usize
 ) -> CudaResult<Vec<Curve>> {
-    let window_size = 1usize;
+    let window_size = 8usize;
     let num_windows = (256 + window_size - 1) / window_size;
     let work_units = num_windows * num_groups; // TODO device.work_units
     let num_terms = bases.len();
@@ -110,21 +110,20 @@ pub fn multiple_multiexp(
 
     let stream = workspace.stream()?;
     let base_gpu = DeviceData::upload(bases, &stream)?;
-    let buckets = DeviceData::uninitialized(work_units * std::mem::size_of::<Curve>())?;
+    println!("Size: {}", work_units * bucket_len * std::mem::size_of::<Curve>());
+    let buckets = DeviceData::uninitialized(work_units * bucket_len * std::mem::size_of::<Curve>())?;
     // output_gpu.to_device(&stream)?;
     
     let kernel = workspace.create_kernel()?;
 
-    dbg!(bases.len());
-    dbg!(exponents.len());
-
-    let physical_local_work_size = num_windows; // most efficient: 32 - 128
-    let global_work_size = work_units / physical_local_work_size;
+    let local_work_size = num_windows; // most efficient: 32 - 128
+    let global_work_size = work_units / local_work_size;
 
     let config = KernelConfig {
         global_work_size,
-        local_work_size: physical_local_work_size,
-        shared_mem: std::mem::size_of::<Curve>() * physical_local_work_size * bucket_len as usize,
+        local_work_size,
+        // shared_mem: std::mem::size_of::<Curve>() * physical_local_work_size * bucket_len as usize,
+        shared_mem: 0,
     };
 
     let kernel_name = format!("{}_multiexp", Affine::name());
@@ -148,6 +147,10 @@ pub fn multiple_multiexp(
     let dur = now.elapsed().as_secs() * 1000
         + now.elapsed().subsec_millis() as u64;
     println!("GPU (inner) took {}ms.", dur);
+
+    for i in output.iter() {
+        assert!(!i.is_zero());
+    }
 
     // output_gpu.to_host(&stream)?;
 
