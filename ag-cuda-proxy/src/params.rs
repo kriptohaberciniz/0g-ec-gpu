@@ -173,6 +173,54 @@ impl<'a, 'b, T> ParamIO for &'b DeviceParam<'a, T> {
     fn after_call(&mut self, _stream: &Stream) -> CudaResult<()> { Ok(()) }
 }
 
+pub struct DeviceData {
+    size: usize,
+    device_mem: DeviceBuffer<u8>,
+}
+
+impl DeviceData {
+    pub fn uninitialized(size: usize) -> CudaResult<Self> {
+
+        Ok(Self {
+            size,
+            device_mem: unsafe { DeviceBuffer::<u8>::uninitialized(size)? },
+        })
+    }
+    pub fn upload<T>(val: &[T], stream: &Stream) -> CudaResult<Self> {
+        use rustacuda::memory::AsyncCopyDestination;
+
+        let size = val.len() * std::mem::size_of::<T>();
+        let mut buffer = unsafe { DeviceBuffer::<u8>::uninitialized(size)? };
+
+        let bytes = unsafe {
+            std::slice::from_raw_parts(
+                val.as_ptr() as *const u8,
+                size,
+            )
+        };
+        unsafe { buffer.async_copy_from(bytes, stream)? };
+
+        Ok(Self {
+            size,
+            device_mem: buffer,
+        })
+    }
+
+    pub fn swap_device_pointer(me: &mut Self, another: &mut Self) {
+        assert_eq!(me.size, another.size);
+
+        std::mem::swap(&mut me.device_mem, &mut another.device_mem);
+    }
+}
+
+impl<'b> ParamIO for &'b DeviceData {
+    fn param_pointer(&self) -> *mut c_void {
+        (&self.device_mem) as *const _ as *mut c_void
+    }
+
+    fn after_call(&mut self, _stream: &Stream) -> CudaResult<()> { Ok(()) }
+}
+
 pub(crate) struct NullPointer;
 
 impl<'a> ParamIO for NullPointer {

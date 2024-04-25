@@ -113,7 +113,12 @@ fn test_multiexp_batch() {
     // Evaluate with CPU
     println!("Speedup: x{}", cpu_dur as f32 / gpu_dur as f32);
 
-    assert_eq!(acc_gpu.iter().map(|x| x.into_affine()).collect::<Vec<_>>(), acc_arkworks.iter().map(|x| x.into_affine()).collect::<Vec<_>>());
+    let gpu_output = acc_gpu.iter().map(|x| x.into_affine()).collect::<Vec<_>>();
+    let cpu_output = acc_arkworks.iter().map(|x| x.into_affine()).collect::<Vec<_>>();
+    if gpu_output!=cpu_output {
+        panic!("Result inconsistent");
+    }
+    // assert_eq!(acc_gpu.iter().map(|x| x.into_affine()).collect::<Vec<_>>(), acc_arkworks.iter().map(|x| x.into_affine()).collect::<Vec<_>>());
 
     println!("============================");
 }

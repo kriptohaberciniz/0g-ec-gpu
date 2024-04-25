@@ -1,4 +1,4 @@
-use ag_cuda_proxy::{ActiveWorkspace, DeviceParam, KernelConfig};
+use ag_cuda_proxy::{ActiveWorkspace, DeviceParam, KernelConfig, DeviceData};
 use ag_cuda_workspace_macro::auto_workspace;
 use ag_types::{GpuName, GpuRepr, PrimeFieldRepr};
 use ark_bls12_381::{Fr as Scalar, G1Affine as Affine, G1Projective as Curve};
@@ -106,12 +106,17 @@ pub fn multiple_multiexp(
     
     // dbg!(bases.len(), bucket.len(), output.len(), exponents.len(), num_terms, num_groups, num_windows, window_size);
 
-    let mut output_gpu = DeviceParam::new(&mut output)?;
+    
 
     let stream = workspace.stream()?;
-    output_gpu.to_device(&stream)?;
+    let base_gpu = DeviceData::upload(bases, &stream)?;
+    let buckets = DeviceData::uninitialized(work_units * std::mem::size_of::<Curve>())?;
+    // output_gpu.to_device(&stream)?;
     
-    let mut kernel = workspace.create_kernel()?;
+    let kernel = workspace.create_kernel()?;
+
+    dbg!(bases.len());
+    dbg!(exponents.len());
 
     let physical_local_work_size = num_windows; // most efficient: 32 - 128
     let global_work_size = work_units / physical_local_work_size;
@@ -128,14 +133,15 @@ pub fn multiple_multiexp(
 
     kernel
         .func(&kernel_name)?
-        .in_ref_slice(bases)?
-        .dev_arg(&output_gpu)?
+        .dev_data(&base_gpu)?
+        .out_slice(&mut output)?
         .in_ref_slice(exponents)?
-        .val(num_terms as u32)?
-        .val(num_groups as u32)?
-        .val(num_windows as u32)?
-        .val(window_size as u32)?
-        .val(num_windows_log2 as u32)?
+        .dev_data(&buckets)?
+        .val(dbg!(num_terms) as u32)?
+        .val(dbg!(num_groups) as u32)?
+        .val(dbg!(num_windows) as u32)?
+        .val(dbg!(window_size) as u32)?
+        .val(dbg!(num_windows_log2) as u32)?
         .launch(config)?
         .complete()?;
     
@@ -143,7 +149,7 @@ pub fn multiple_multiexp(
         + now.elapsed().subsec_millis() as u64;
     println!("GPU (inner) took {}ms.", dur);
 
-    output_gpu.to_host(&stream)?;
+    // output_gpu.to_host(&stream)?;
 
     Ok(output)
 }

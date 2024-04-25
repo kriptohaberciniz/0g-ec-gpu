@@ -1,4 +1,4 @@
-use crate::params::{DeviceParam, NullPointer};
+use crate::{params::{DeviceParam, NullPointer}, DeviceData};
 
 use super::params::{Param, ParamIO};
 
@@ -122,6 +122,14 @@ impl<'a, 'b> KernelTask<'a, 'b> {
     ) -> CudaResult<Self> {
         self.args.push(Box::new(output));
         self.elapsed("device param");
+        Ok(self)
+    }
+
+    pub fn dev_data(
+        mut self, output: &'b DeviceData,
+    ) -> CudaResult<Self> {
+        self.args.push(Box::new(output));
+        self.elapsed("device data");
         Ok(self)
     }
 

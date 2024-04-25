@@ -8,10 +8,50 @@
  * threads running in parallel for calculating a multiexp instance.
  */
 
+
+DEVICE void POINT_multiexp_group(
+  GLOBAL POINT_affine *bases,
+  GLOBAL SCALAR_repr *exps,
+  GLOBAL POINT_jacobian *buckets,
+  uint tid,
+  uint glen
+)
+{
+  POINT_jacobian* t_bucket = &buckets[tid];
+  *t_bucket = POINT_ZERO;
+  
+  for(uint i = 0; i < glen; i++) {
+    uint ind = SCALAR_get_bit(exps[i], tid);
+    if(ind) *t_bucket = POINT_add_mixed(*t_bucket, bases[i]);
+  }
+  
+  BARRIER_LOCAL();
+}
+
+DEVICE void POINT_aggregate_group(
+  GLOBAL POINT_jacobian *buckets,
+  uint tid,
+  uint num_windows_log2
+)
+{
+  POINT_jacobian res = POINT_ZERO;
+  for(uint height = 0; height < num_windows_log2; height++) {
+    if (tid % (1 << (height + 1)) == 0) {
+      res = buckets[tid];
+      for(uint i = 0; i < (1 << height); i++) {
+        res = POINT_double(res);
+      }
+      buckets[tid] = POINT_add(res, buckets[tid + (1 << height)]); // 8
+    }
+    BARRIER_LOCAL();
+  }
+}
+
 KERNEL void POINT_multiexp(
     GLOBAL POINT_affine *bases,
     GLOBAL POINT_jacobian *results,
     GLOBAL SCALAR_repr *exps,
+    GLOBAL POINT_jacobian *buckets,
     uint n,
     uint num_groups,
     uint num_windows,
@@ -23,49 +63,26 @@ KERNEL void POINT_multiexp(
   const uint gid = GET_GLOBAL_ID();
   if(gid >= num_windows * num_groups) return;
 
-  POINT_jacobian* buckets = (POINT_jacobian*)cuda_shared;
+  // POINT_jacobian* buckets = (POINT_jacobian*)cuda_shared;
+  const uint group_thread_len = num_windows;
+  const uint group_input_len = n / num_groups;
 
-  const uint len = n / num_groups;
-  const uint task_id = gid / num_windows;
-  const uint nstart = len * task_id;
-  const uint nend = min(nstart + len, n);
-  const uint bits = gid % num_windows;
-  
-  buckets[bits] = POINT_ZERO;
-  for(uint i = nstart; i < nend; i++) {
-    uint ind = SCALAR_get_bit(exps[i], bits);
-    if(ind) buckets[bits] = POINT_add_mixed(buckets[bits], bases[i]);
+  const uint group_id = gid / group_thread_len;
+  const uint local_thread_id = gid % group_thread_len;
+
+  POINT_affine *group_bases = &bases[group_id * group_input_len];
+  SCALAR_repr *group_exps = &exps[group_id * group_input_len];
+  POINT_jacobian *group_buckets = &buckets[group_id * group_thread_len];
+
+  POINT_multiexp_group(group_bases, group_exps, group_buckets, local_thread_id, group_input_len);
+
+
+  // 245 ms
+
+  POINT_aggregate_group(group_buckets, local_thread_id, num_windows_log2);
+
+  if (local_thread_id == 0) {
+    results[group_id] = group_buckets[0];
   }
-
-  BARRIER_LOCAL();
-
-  // 365 ms
-  //if (bits == 0) {
-  //  POINT_jacobian res = buckets[0]; 
-  //  for(uint i = 1; i < num_windows; i++) {
-  //    res = POINT_double(res); // 255
-  //    res = POINT_add(res, buckets[i]); // 255
-  //  }
-  //  results[task_id] = res;
-  //}
-
-  // 280 ms = 240 + 40
-  uint step_2 = 1;
-  uint step_2_new = 2;
-  POINT_jacobian res = POINT_ZERO;
-  for(uint step = 0; step < num_windows_log2; step++) {
-    if (bits % step_2_new == 0) {
-      res = buckets[bits];
-      for(uint i = 0; i < step_2; i++) {
-        res = POINT_double(res); // 1, 2, ..., 128 -> sum -> 255
-      }
-      buckets[bits] = POINT_add(res, buckets[bits + step_2]); // 8
-    }
-    step_2 = step_2_new;
-    step_2_new <<= 1;
-    BARRIER_LOCAL();
-  }
-  if (bits == 0) {
-    results[task_id] = buckets[0];
-  }
+  // 260 ms
 }
