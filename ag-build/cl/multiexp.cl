@@ -35,16 +35,26 @@ DEVICE void POINT_multiexp_group(
     }
   }
 
+  // 84 ms
   POINT_jacobian acc = t_buckets[num_thread_buckets - 1];
   POINT_jacobian res = acc;
   for(int j = num_thread_buckets - 1; j >= 1; j--) {
     acc = POINT_add(acc, t_buckets[j - 1]);
     res = POINT_add(res, acc);
   }
-
   t_buckets[0] = res;
   
+  // 98 ms
   BARRIER_LOCAL();
+}
+
+DEVICE uint POINT_bucket_base(uint index, uint window_bits, uint height) {
+  uint x = (index + (1 << height)) * window_bits;
+  if (x >= SCALAR_BITS) {
+    return 0;
+  } else {
+    return SCALAR_BITS - x;
+  }
 }
 
 DEVICE void POINT_aggregate_group(
@@ -52,23 +62,33 @@ DEVICE void POINT_aggregate_group(
   uint tid,
   uint num_thread_buckets,
   uint window_bits,
-  uint height
+  uint group_threads
 )
 {
-  for(uint h = 0; h < height; h++) {
+  uint h=0;
+  while(group_threads > (1 << h)) {
     uint lead_id = tid >> (h + 1) << (h + 1);
-    uint sib_id = lead_id + (1 << h);
-    uint bit_offset = (1 << h) * window_bits;
-
+    
     if (tid != lead_id) {
       return;
     }
 
+    uint sib_id = lead_id + (1 << h);
+
+    if (sib_id >= group_threads) {
+      return;
+    }
+    
+    uint lead_base = POINT_bucket_base(lead_id, window_bits, h);
+    uint sib_base = POINT_bucket_base(sib_id, window_bits, h);
+
     POINT_jacobian res = buckets[lead_id * num_thread_buckets];
-    for(uint i = 0; i < bit_offset; i++) {
+    for(uint i = 0; i < lead_base - sib_base; i++) {
       res = POINT_double(res);
     }
     buckets[lead_id * num_thread_buckets] = POINT_add(res, buckets[sib_id * num_thread_buckets]); // 8
+
+    h += 1;
   
     BARRIER_LOCAL();
   }
@@ -82,8 +102,7 @@ KERNEL void POINT_multiexp(
     uint n,
     uint num_groups,
     uint num_windows,
-    uint window_bits,
-    uint num_windows_log2) 
+    uint window_bits) 
 {
 
   // We have `num_windows` * `num_groups` threads per multiexp.
@@ -106,12 +125,12 @@ KERNEL void POINT_multiexp(
   POINT_multiexp_group(group_bases, group_exps, group_buckets, local_thread_id, group_input_len, thread_buckets, group_thread_len, window_bits);
 
 
-  // 245 ms
+  // 98 ms
+  POINT_aggregate_group(group_buckets, local_thread_id, thread_buckets, window_bits, group_thread_len);
 
-  POINT_aggregate_group(group_buckets, local_thread_id, thread_buckets, window_bits, num_windows_log2);
 
+  // 101 ms
   if (local_thread_id == 0) {
     results[group_id] = group_buckets[0];
   }
-  // 260 ms
 }

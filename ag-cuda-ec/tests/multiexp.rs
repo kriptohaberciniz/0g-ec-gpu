@@ -106,7 +106,7 @@ fn test_multiexp_batch() {
     // let acc_gpu: Vec<_> = bases_gpu.chunks(1 << MAX_DEGREE).zip(exponents.chunks(1 << MAX_DEGREE))
     //     .map(|(bs, es)| multiexp_gpu_st(bs, es).unwrap())
     //     .collect();
-    let acc_gpu: Vec<_> = multiple_multiexp_st(&bases_gpu, &exponents, 1024).unwrap();
+    let acc_gpu: Vec<_> = multiple_multiexp_st(&bases_gpu, &exponents, 512).unwrap();
     let gpu_dur = now.elapsed().as_millis();
     println!("GPU took {}ms.", gpu_dur);
 

@@ -93,13 +93,13 @@ pub fn multiexp_gpu(
 pub fn multiple_multiexp(
     workspace: &ActiveWorkspace, bases: &[<Affine as GpuRepr>::Repr], exponents: &[<Scalar as PrimeFieldRepr>::Repr], num_groups: usize
 ) -> CudaResult<Vec<Curve>> {
-    let window_size = 8usize;
+    let window_size = 7usize;
     let num_windows = (256 + window_size - 1) / window_size;
     let work_units = num_windows * num_groups; // TODO device.work_units
     let num_terms = bases.len();
     let bucket_len = (1 << window_size) - 1;
-    let num_windows_log2 = log2(num_windows);
-    assert_eq!(1 << num_windows_log2, num_windows);
+    // let num_windows_log2 = log2(num_windows);
+    // assert_eq!(1 << num_windows_log2, num_windows);
     
 
     let mut output = vec![Curve::zero(); num_groups];
@@ -140,7 +140,7 @@ pub fn multiple_multiexp(
         .val(dbg!(num_groups) as u32)?
         .val(dbg!(num_windows) as u32)?
         .val(dbg!(window_size) as u32)?
-        .val(dbg!(num_windows_log2) as u32)?
+        // .val(dbg!(num_windows_log2) as u32)?
         .launch(config)?
         .complete()?;
     
