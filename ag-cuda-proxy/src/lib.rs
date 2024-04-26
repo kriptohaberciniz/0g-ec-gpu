@@ -6,7 +6,7 @@ mod params;
 
 pub use kernel::KernelConfig;
 pub use module::{ActiveWorkspace, CudaWorkspace};
-pub use params::{DeviceParam, ParamIO};
+pub use params::{DeviceData, DeviceParam, ParamIO};
 
 pub fn cuda_init() {
     use rustacuda::{init, CudaFlags};

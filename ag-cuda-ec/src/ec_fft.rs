@@ -1,7 +1,7 @@
+use crate::pairing_suite::{Affine, Curve, Scalar};
 use ag_cuda_proxy::{ActiveWorkspace, DeviceParam, KernelConfig};
 use ag_cuda_workspace_macro::auto_workspace;
 use ag_types::GpuName;
-use ark_bls12_381::{Fr as Scalar, G1Affine as Affine, G1Projective as Curve};
 use ark_ff::Field;
 use ark_std::Zero;
 use rustacuda::error::CudaResult;
@@ -96,4 +96,48 @@ pub fn radix_ec_fft(
     input_gpu.to_host(&stream)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::pairing_suite::Scalar;
+    use ark_ff::{FftField, Field};
+    use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
+    use ark_std::{rand::thread_rng, Zero};
+
+    use super::*;
+    use crate::test_tools::random_input;
+
+    #[test]
+    fn test_ec_fft() {
+        let mut rng = thread_rng();
+
+        for degree in 4..8 {
+            let n = 1 << degree;
+
+            println!("Testing FFTg for {} elements...", n);
+
+            let mut omegas = vec![Scalar::zero(); 32];
+            omegas[0] = Scalar::get_root_of_unity(n as u64).unwrap();
+            for i in 1..32 {
+                omegas[i] = omegas[i - 1].square();
+            }
+
+            let mut v1_coeffs = random_input(n, &mut rng);
+            let mut v2_coeffs = v1_coeffs.clone();
+
+            // Evaluate with GPU
+            radix_ec_fft_mt(&mut v1_coeffs, &omegas[..]).unwrap();
+
+            // Evaluate with CPU
+            let fft_domain =
+                Radix2EvaluationDomain::<Scalar>::new(v2_coeffs.len()).unwrap();
+
+            v2_coeffs = fft_domain.fft(&v2_coeffs);
+
+            if v1_coeffs != v2_coeffs {
+                panic!("wrong answer");
+            }
+        }
+    }
 }

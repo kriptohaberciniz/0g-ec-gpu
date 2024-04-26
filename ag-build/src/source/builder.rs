@@ -1,6 +1,6 @@
 //! Builder to create the source code of a GPU kernel.
 
-use std::{collections::HashSet, fmt::Write};
+use std::{collections::BTreeSet, fmt::Write};
 
 use super::{
     limb::Limb32Or64,
@@ -17,17 +17,17 @@ use ag_types::{GpuCurveAffine, GpuField};
 #[derive(Default)]
 pub struct SourceBuilder {
     /// The [`Field`]s that are used in this kernel.
-    fields: HashSet<Box<dyn NameAndSource>>,
+    fields: BTreeSet<Box<dyn NameAndSource>>,
     /// The extension [`Field`]s that are used in this kernel.
-    extension_fields: HashSet<Box<dyn NameAndSource>>,
+    extension_fields: BTreeSet<Box<dyn NameAndSource>>,
     /// The [`Fft`]s that are used in this kernel.
-    ffts: HashSet<Box<dyn NameAndSource>>,
-    ec: HashSet<Box<dyn NameAndSource>>,
+    ffts: BTreeSet<Box<dyn NameAndSource>>,
+    ec: BTreeSet<Box<dyn NameAndSource>>,
     /// The [`Fftg`]s that are used in this kernel.
-    ec_ffts: HashSet<Box<dyn NameAndSource>>,
+    ec_ffts: BTreeSet<Box<dyn NameAndSource>>,
     /// The [`Multiexp`]s that are used in this kernel.
-    multiexps: HashSet<Box<dyn NameAndSource>>,
-    others: HashSet<Box<dyn NameAndSource>>,
+    multiexps: BTreeSet<Box<dyn NameAndSource>>,
+    others: BTreeSet<Box<dyn NameAndSource>>,
     /// Additional source that is appended at the end of the generated source.
     extra_sources: Vec<String>,
 }
@@ -89,6 +89,9 @@ impl SourceBuilder {
     /// the curve point directly.
     pub fn add_multiexp<C>(self) -> Self
     where C: GpuCurveAffine + 'static {
+        if cfg!(feature = "opencl") {
+            panic!("The source code has not been tested on opencl");
+        }
         let mut config = self.add_ec::<C>();
         let multiexp = Multiexp::<C>::new();
         config.multiexps.insert(Box::new(multiexp));
@@ -150,7 +153,7 @@ impl SourceBuilder {
 
 fn write_field(
     result: &mut String, limb_size: Limb32Or64,
-    field: &HashSet<Box<dyn NameAndSource>>,
+    field: &BTreeSet<Box<dyn NameAndSource>>,
 ) {
     for item in field {
         write!(result, "{}\n", item.source(limb_size)).unwrap();

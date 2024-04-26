@@ -1,33 +1,38 @@
-use std::time::Instant;
-
-use ark_bls12_381::{Fr as Scalar, G1Affine as Affine};
+use ag_cuda_ec::{
+    ec_fft::*,
+    init_global_workspace, init_local_workspace,
+    pairing_suite::{Affine, Scalar},
+    test_tools::random_input,
+};
 use ark_ec::AffineRepr;
 use ark_ff::{FftField, Field, UniformRand};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::{rand::thread_rng, Zero};
-
-use ag_cuda_ec::*;
 use rayon::iter::ParallelIterator;
+use std::time::Instant;
 
-#[test]
-fn test_ec_fft_sequential() {
+fn main() {
+    bench_ec_fft_sequential();
+    // bench_ec_fft_parallel();
+}
+
+#[allow(unused)]
+fn bench_ec_fft_sequential() {
     let mut rng = thread_rng();
     init_global_workspace();
 
     for degree in 0..12usize {
-        let n = 1 << degree;
+        let n: usize = 1 << degree;
 
         println!("Testing FFTg for {} elements...", n);
 
         let mut omegas = vec![Scalar::zero(); 32];
-        omegas[0] = Scalar::get_root_of_unity(n).unwrap();
+        omegas[0] = Scalar::get_root_of_unity(n as u64).unwrap();
         for i in 1..32 {
             omegas[i] = omegas[i - 1].square();
         }
 
-        let mut v1_coeffs = (0..n)
-            .map(|_| Affine::rand(&mut rng).into_group())
-            .collect::<Vec<_>>();
+        let mut v1_coeffs = random_input(n, &mut rng);
         let mut v2_coeffs = v1_coeffs.clone();
 
         // Evaluate with GPU
@@ -53,8 +58,8 @@ fn test_ec_fft_sequential() {
     }
 }
 
-#[test]
-fn test_ec_fft_parallel() {
+#[allow(unused)]
+fn bench_ec_fft_parallel() {
     use ark_std::One;
     use rayon::iter::IntoParallelIterator;
 

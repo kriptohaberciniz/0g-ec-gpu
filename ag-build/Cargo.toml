@@ -23,6 +23,6 @@ lazy_static = { workspace = true }
 rand = "0.8"
 
 [features]
-default = []
+default = ["cuda"]
 cuda = ["ec-gpu-program/cuda"]
 opencl = ["ec-gpu-program/opencl"]
