@@ -124,6 +124,11 @@ DEVICE POINT_jacobian POINT_neg(POINT_jacobian a) {
   return a;
 }
 
+DEVICE POINT_affine POINT_affine_neg(POINT_affine a) {
+  a.y = BASE_sub(BASE_ZERO, a.y);
+  return a;
+}
+
 DEVICE POINT_jacobian POINT_sub(POINT_jacobian a, POINT_jacobian b) {
   return POINT_add(a, POINT_neg(b));
 }

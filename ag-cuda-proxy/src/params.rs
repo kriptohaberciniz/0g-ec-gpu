@@ -96,8 +96,6 @@ impl<'a, T> ParamIO for (Param<'a, T>, Option<DeviceBuffer<u8>>) {
         };
 
         if let Some(pointer) = self.0.output_pointer() {
-            dbg!("sync back");
-
             let bytes = unsafe {
                 std::slice::from_raw_parts_mut(
                     pointer as *mut u8,
@@ -105,7 +103,6 @@ impl<'a, T> ParamIO for (Param<'a, T>, Option<DeviceBuffer<u8>>) {
                 )
             };
             unsafe { buffer.async_copy_to(bytes, stream)? };
-            // stream.synchronize()?;
         }
 
         Ok(())
@@ -180,12 +177,12 @@ pub struct DeviceData {
 
 impl DeviceData {
     pub fn uninitialized(size: usize) -> CudaResult<Self> {
-
         Ok(Self {
             size,
             device_mem: unsafe { DeviceBuffer::<u8>::uninitialized(size)? },
         })
     }
+
     pub fn upload<T>(val: &[T], stream: &Stream) -> CudaResult<Self> {
         use rustacuda::memory::AsyncCopyDestination;
 
@@ -193,10 +190,7 @@ impl DeviceData {
         let mut buffer = unsafe { DeviceBuffer::<u8>::uninitialized(size)? };
 
         let bytes = unsafe {
-            std::slice::from_raw_parts(
-                val.as_ptr() as *const u8,
-                size,
-            )
+            std::slice::from_raw_parts(val.as_ptr() as *const u8, size)
         };
         unsafe { buffer.async_copy_from(bytes, stream)? };
 

@@ -1,8 +1,14 @@
-use crate::{params::{DeviceParam, NullPointer}, DeviceData};
+use crate::{
+    params::{DeviceParam, NullPointer},
+    DeviceData,
+};
 
 use super::params::{Param, ParamIO};
 
-use std::ffi::{c_void, CString};
+use std::{
+    ffi::{c_void, CString},
+    iter::once,
+};
 
 use rustacuda::{
     error::CudaResult, function::Function, module::Module, stream::Stream,
@@ -11,7 +17,7 @@ use rustacuda::{
 #[cfg(feature = "timer")]
 use std::time::Instant;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct KernelConfig {
     pub global_work_size: usize,
     pub local_work_size: usize,
@@ -33,10 +39,13 @@ impl<'a> Kernel<'a> {
     }
 }
 
+type Params<'b> = Vec<Box<dyn ParamIO + 'b>>;
+
 pub struct KernelTask<'a, 'b> {
     k: Kernel<'a>,
+    launched: Vec<Params<'b>>,
     function: Function<'a>,
-    args: Vec<Box<dyn ParamIO + 'b>>,
+    args: Params<'b>,
     #[cfg(feature = "timer")]
     instant: Instant,
 }
@@ -61,6 +70,7 @@ impl<'a, 'b> KernelTask<'a, 'b> {
 
         Ok(KernelTask {
             k: kernel,
+            launched: vec![],
             function,
             args: Vec::new(),
             #[cfg(feature = "timer")]
@@ -125,9 +135,7 @@ impl<'a, 'b> KernelTask<'a, 'b> {
         Ok(self)
     }
 
-    pub fn dev_data(
-        mut self, output: &'b DeviceData,
-    ) -> CudaResult<Self> {
+    pub fn dev_data(mut self, output: &'b DeviceData) -> CudaResult<Self> {
         self.args.push(Box::new(output));
         self.elapsed("device data");
         Ok(self)
@@ -161,20 +169,49 @@ impl<'a, 'b> KernelTask<'a, 'b> {
                 &args,
             )?
         }
+
         self.elapsed("after launch");
         Ok(PendingTask(self))
     }
 }
 
 impl<'a, 'b> PendingTask<'a, 'b> {
-    pub fn complete(self) -> CudaResult<Kernel<'a>> {
-        let mut kernel = self.0;
-        kernel.k.stream.synchronize()?;
-        kernel.elapsed("exec done");
-        for mut param in kernel.args.drain(..) {
-            param.after_call(&kernel.k.stream)?;
-            #[cfg(feature = "timer")]
-            {
+    pub fn next_call(mut self) -> CudaResult<KernelTask<'a, 'b>> {
+        self.sync_back()?;
+
+        let mut task = self.0;
+        task.launched.push(std::mem::take(&mut task.args));
+
+        Ok(task)
+    }
+
+    pub fn next_call_function(
+        self, name: &str,
+    ) -> CudaResult<KernelTask<'a, 'b>> {
+        let mut task = self.next_call()?;
+        let function_name =
+            CString::new(name).expect("Kernel name must not contain nul bytes");
+        let function = task.k.module.get_function(&function_name)?;
+        task.function = function;
+
+        Ok(task)
+    }
+
+    pub fn complete(mut self) -> CudaResult<Kernel<'a>> {
+        self.sync_back()?;
+
+        let kernel = self.0.k;
+        kernel.stream.synchronize()?;
+        Ok(kernel)
+    }
+
+    fn sync_back(&mut self) -> CudaResult<()> {
+        let kernel = &mut self.0;
+        let tasks = kernel.launched.iter_mut().chain(once(&mut kernel.args));
+        for task_args in tasks {
+            for mut param in task_args.drain(..) {
+                param.after_call(&kernel.k.stream)?;
+                #[cfg(feature = "timer")]
                 println!(
                     "[{:?}] Elapsed {} us (back)",
                     std::thread::current().id(),
@@ -182,6 +219,7 @@ impl<'a, 'b> PendingTask<'a, 'b> {
                 );
             }
         }
-        Ok(kernel.k)
+
+        Ok(())
     }
 }

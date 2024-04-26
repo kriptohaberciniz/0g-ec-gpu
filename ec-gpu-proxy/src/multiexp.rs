@@ -185,8 +185,16 @@ where G: GpuCurveAffine + GpuName
             )?;
 
             dbg!(window_size, num_groups * num_windows);
-            dbg!(bases.len(), self.work_units * bucket_len, self.work_units, exponents.len(), num_groups, num_windows, window_size);
-    
+            dbg!(
+                bases.len(),
+                self.work_units * bucket_len,
+                self.work_units,
+                exponents.len(),
+                num_groups,
+                num_windows,
+                window_size
+            );
+
             kernel
                 .arg(&base_buffer)
                 .arg(&bucket_buffer)
