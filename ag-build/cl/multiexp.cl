@@ -107,22 +107,6 @@ DEVICE void POINT_multiexp_chunk(
       }
     }
 
-    // Compute the bucket_scalar and the elliptic curve point to be added.
-    // uint bucket_scalar;
-    // POINT_affine base;
-    // if (!carry || !signed_window) {
-    //   bucket_scalar = ind;
-    //   base = bases[i];
-    // } else {
-    //   bucket_scalar = full_bucket - ind;
-    //   base = POINT_affine_neg(bases[i]);
-    // }
-
-    // if (bucket_scalar > 0) {
-    //   POINT_jacobian* bucket = &t_buckets[bucket_scalar - 1];
-    //   *bucket = POINT_add_mixed(*bucket, base);
-    // }
-
     bool compute_neg = carry && signed_window;
     
     if (ind > 0 && !compute_neg) {
