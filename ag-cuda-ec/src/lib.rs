@@ -1,4 +1,5 @@
 mod ec_fft;
+mod multiexp;
 
 use ag_cuda_proxy::CudaWorkspace;
 use ag_cuda_workspace_macro::construct_workspace;
@@ -9,3 +10,4 @@ const FATBIN: &'static [u8] =
 construct_workspace!(|| CudaWorkspace::from_bytes(FATBIN).unwrap());
 
 pub use ec_fft::*;
+pub use multiexp::*;

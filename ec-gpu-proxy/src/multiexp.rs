@@ -115,6 +115,7 @@ where G: GpuCurveAffine + GpuName
         let compute_capability = device.compute_capability();
         let work_units = work_units(compute_units, compute_capability);
         let chunk_size = calc_chunk_size::<G>(mem, work_units);
+        dbg!(chunk_size);
 
         Ok(SingleMultiexpKernel {
             program,
@@ -183,6 +184,9 @@ where G: GpuCurveAffine + GpuName
                 LOCAL_WORK_SIZE,
             )?;
 
+            dbg!(window_size, num_groups * num_windows);
+            dbg!(bases.len(), self.work_units * bucket_len, self.work_units, exponents.len(), num_groups, num_windows, window_size);
+    
             kernel
                 .arg(&base_buffer)
                 .arg(&bucket_buffer)

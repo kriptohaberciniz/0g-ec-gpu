@@ -1,7 +1,7 @@
 use ag_cuda_proxy::{ActiveWorkspace, DeviceParam, KernelConfig};
 use ag_cuda_workspace_macro::auto_workspace;
 use ag_types::GpuName;
-use ark_bn254::{Fr as Scalar, G1Affine as Affine, G1Projective as Curve};
+use ark_bls12_381::{Fr as Scalar, G1Affine as Affine, G1Projective as Curve};
 use ark_ff::Field;
 use ark_std::Zero;
 use rustacuda::error::CudaResult;
@@ -66,6 +66,7 @@ pub fn radix_ec_fft(
         };
 
         let kernel_name = format!("{}_radix_fft", Affine::name());
+        dbg!(kernel_name.clone());
 
         let now = Instant::now();
 

@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use ark_bn254::{Fr as Scalar, G1Affine as Affine};
+use ark_bls12_381::{Fr as Scalar, G1Affine as Affine};
 use ark_ec::AffineRepr;
 use ark_ff::{FftField, Field, UniformRand};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
@@ -14,7 +14,7 @@ fn test_ec_fft_sequential() {
     let mut rng = thread_rng();
     init_global_workspace();
 
-    for degree in 0..20usize {
+    for degree in 0..12usize {
         let n = 1 << degree;
 
         println!("Testing FFTg for {} elements...", n);

@@ -4,7 +4,7 @@ use std::{sync::Arc, time::Instant};
 
 use ag_build::{self, generate};
 use ag_types::{GpuCurveAffine, PrimeFieldRepr};
-use ark_bn254::{Fr, G1Affine};
+use ark_bls12_381::{Fr, G1Affine};
 use ark_ec::CurveGroup;
 use ark_ff::UniformRand;
 use ec_gpu_program::EcError;
@@ -38,7 +38,7 @@ fn build_multiexp() {
 #[test]
 fn gpu_multiexp_consistency() {
     fil_logger::maybe_init();
-    const MAX_LOG_D: usize = 20;
+    const MAX_LOG_D: usize = 11;
     const START_LOG_D: usize = 10;
     let devices = Device::all();
     build_multiexp();

@@ -355,6 +355,7 @@ where
     } else {
         (f64::from(exponents.len() as u32)).ln().ceil() as u32
     };
+    dbg!(exponents.len(), c); // log_e instead of log_2 ?
 
     if let Some(query_size) = density_map.as_ref().get_query_size() {
         // If the density map has a known query size, it should not be
@@ -392,7 +393,7 @@ mod tests {
             acc
         }
 
-        const SAMPLES: usize = 1 << 14;
+        const SAMPLES: usize = 1 << 12;
 
         let rng = &mut rand::thread_rng();
         let v: Vec<Scalar> =

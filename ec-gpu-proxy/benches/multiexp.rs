@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use ag_build::generate;
 use ag_types::PrimeFieldRepr;
-use ark_bn254::{Fr as Scalar, G1Affine};
+use ark_bls12_381::{Fr as Scalar, G1Affine};
 use ark_std::UniformRand;
 use criterion::{
     black_box, criterion_group, criterion_main, BenchmarkId, Criterion,
