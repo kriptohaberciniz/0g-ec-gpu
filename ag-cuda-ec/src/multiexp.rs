@@ -9,13 +9,25 @@ use std::time::Instant;
 use crate::{GLOBAL, LOCAL};
 
 #[auto_workspace]
+pub fn upload_multiexp_bases(
+    workspace: &ActiveWorkspace, bases: &[Affine],
+) -> CudaResult<DeviceData> {
+    let bases_gpu_repr: Vec<_> =
+        bases.iter().map(GpuRepr::to_gpu_repr).collect();
+    let stream = workspace.stream()?;
+    DeviceData::upload(&bases_gpu_repr, &stream)
+}
+
+#[auto_workspace]
 pub fn multiple_multiexp(
-    workspace: &ActiveWorkspace, bases: &[<Affine as GpuRepr>::Repr],
+    workspace: &ActiveWorkspace, bases_gpu: &DeviceData,
     exponents: &[<Scalar as PrimeFieldRepr>::Repr], num_chunks: usize,
     window_size: usize, neg_is_cheap: bool,
 ) -> CudaResult<Vec<Curve>> {
     let num_windows = (256 + window_size - 1) / window_size;
-    let num_lines = bases.len() / exponents.len();
+    let num_bases =
+        bases_gpu.size() / std::mem::size_of::<<Affine as GpuRepr>::Repr>();
+    let num_lines = num_bases / exponents.len();
     let work_units = num_windows * num_chunks * num_lines;
     let input_len = exponents.len();
 
@@ -26,9 +38,6 @@ pub fn multiple_multiexp(
     };
 
     let mut output = vec![Curve::zero(); num_chunks * num_lines];
-
-    let stream = workspace.stream()?;
-    let base_gpu = DeviceData::upload(bases, &stream)?;
 
     let buckets = DeviceData::uninitialized(
         work_units * bucket_len * std::mem::size_of::<Curve>(),
@@ -51,7 +60,7 @@ pub fn multiple_multiexp(
 
     kernel
         .func(&kernel_name)?
-        .dev_data(&base_gpu)?
+        .dev_data(bases_gpu)?
         .out_slice(&mut output)?
         .in_ref_slice(&exponents)?
         .dev_data(&buckets)?
@@ -74,7 +83,7 @@ pub fn multiple_multiexp(
 #[cfg(test)]
 mod tests {
     use crate::pairing_suite::{Curve, Scalar};
-    use ag_types::{GpuRepr, PrimeFieldRepr};
+    use ag_types::PrimeFieldRepr;
     use ark_ec::VariableBaseMSM;
     use ark_std::rand::thread_rng;
 
@@ -93,10 +102,9 @@ mod tests {
         let bases = random_input(INPUT_LEN * LINES, &mut rng);
         let exponents = random_input::<Scalar, _>(INPUT_LEN, &mut rng);
 
-        let bases_gpu: Vec<_> =
-            bases.iter().map(GpuRepr::to_gpu_repr).collect();
+        let bases_gpu = upload_multiexp_bases_mt(&bases).unwrap();
         let exponents_repr: Vec<_> =
-            exponents.iter().map(|x| x.to_repr()).collect();
+            exponents.iter().map(|x| x.to_bigint()).collect();
 
         let cpu_output: Vec<_> = bases
             .chunks(CHUNK_SIZE)

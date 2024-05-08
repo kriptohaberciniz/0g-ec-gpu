@@ -12,7 +12,7 @@ fn lock_cu_context() -> bool { !CONTEXT_GUARD.replace(true) }
 
 fn release_cu_context() { CONTEXT_GUARD.replace(false); }
 
-/// A guard guarantee that only a signle workspace can be activated at one time.
+/// A guard guarantee that only a single workspace can be activated at one time.
 pub struct WorkspaceContextGuard<'a>(&'a CudaContext);
 
 impl<'a> WorkspaceContextGuard<'a> {

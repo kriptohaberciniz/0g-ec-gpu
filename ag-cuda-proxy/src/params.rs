@@ -205,6 +205,8 @@ impl DeviceData {
 
         std::mem::swap(&mut me.device_mem, &mut another.device_mem);
     }
+
+    pub fn size(&self) -> usize { self.size }
 }
 
 impl<'b> ParamIO for &'b DeviceData {

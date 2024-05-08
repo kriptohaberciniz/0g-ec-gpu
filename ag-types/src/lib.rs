@@ -61,8 +61,8 @@ pub trait GpuCurveAffine:
 
 pub trait PrimeFieldRepr: ark_ff::PrimeField {
     type Repr: ark_ff::BigInteger;
-    fn to_repr(&self) -> Self::Repr;
-    fn from_repr(repr: Self::Repr) -> Option<Self>;
+    fn to_bigint(&self) -> Self::Repr;
+    fn from_bigint(repr: Self::Repr) -> Option<Self>;
 }
 
 pub trait GpuRepr {

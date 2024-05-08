@@ -26,5 +26,5 @@ impl CudaContext {
         }
     }
 
-    pub fn unlock(&self) { self.in_use.store(false, Ordering::Release); }
+    pub fn unlock(&self) { self.in_use.store(false, Ordering::SeqCst); }
 }

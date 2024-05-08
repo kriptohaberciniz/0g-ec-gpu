@@ -31,10 +31,9 @@ fn bench_large_amt() {
         exp_reprs.len()
     );
 
-    let bases_gpu: Vec<_> = bases.iter().map(GpuRepr::to_gpu_repr).collect();
+    let bases_gpu = upload_multiexp_bases_st(&bases);
 
     // Evaluate with GPU
-
     for group_degree in 7..=11 {
         let num_groups = 1 << group_degree;
         for window_size in 4..=9 {

@@ -269,8 +269,8 @@ where
         let mut buckets =
             vec![<G as GpuCurveAffine>::Curve::zero(); (1 << c) - 1];
 
-        let zero = G::Scalar::zero().to_repr();
-        let one = G::Scalar::one().to_repr();
+        let zero = G::Scalar::zero().to_bigint();
+        let one = G::Scalar::one().to_bigint();
 
         // only the first round uses this
         let handle_trivial = skip == 0;

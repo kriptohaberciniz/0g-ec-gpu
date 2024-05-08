@@ -4,6 +4,7 @@ pub mod pairing_suite;
 pub mod test_tools;
 
 use ag_cuda_proxy::CudaWorkspace;
+pub use ag_cuda_proxy::DeviceData;
 use ag_cuda_workspace_macro::construct_workspace;
 
 const FATBIN: &'static [u8] =

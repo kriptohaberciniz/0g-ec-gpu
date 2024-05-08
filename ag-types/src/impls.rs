@@ -10,9 +10,9 @@ where Self: PrimeField
 {
     type Repr = BigInt<N>;
 
-    fn to_repr(&self) -> Self::Repr { MontConfig::into_bigint(self.clone()) }
+    fn to_bigint(&self) -> Self::Repr { MontConfig::into_bigint(self.clone()) }
 
-    fn from_repr(repr: Self::Repr) -> Option<Self> {
+    fn from_bigint(repr: Self::Repr) -> Option<Self> {
         MontConfig::from_bigint(repr)
     }
 }
